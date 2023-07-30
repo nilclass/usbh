@@ -32,8 +32,11 @@ pub enum Event {
     BusError(bus::Error),
 }
 
+/// Result returned from `UsbHost::poll`.
 pub enum PollResult {
+    /// Nothing special to report. Poll again when another interrupt happens
     None,
+    /// Poll again after the given duration. This is used to implement delays in the enumeration process, without blocking.
     PollAgain(fugit::MillisDurationU32),
 }
 
@@ -120,6 +123,13 @@ impl<B: HostBus> UsbHost<B> {
         ), &[])
     }
 
+    /// Poll the USB host. This must be called reasonably often.
+    ///
+    /// If the host implementation has an interrupt that fires on USB activity, then calling it once in that interrupt handler is enough.
+    /// Otherwise make sure to call it at least once per millisecond.
+    ///
+    /// By default `delay_complete` should be passed as `false`.
+    /// Only if `PollResult::PollAgain` was returned, `poll(true)` should be called once after the delay has passed.
     pub fn poll(&mut self, delay_complete: bool) -> PollResult {
         let bus_result = self.bus.poll();
 
@@ -162,16 +172,13 @@ impl<B: HostBus> UsbHost<B> {
             State::Enumeration(enumeration_state) => {
                 match enumeration::process_enumeration(event, *enumeration_state, self) {
                     EnumerationState::Assigned(address) => {
-                        debug!("Assigned: {}", address);
                         self.state = State::Assigned(address);
                     }
                     state if state.delay().is_some() => {
-                        debug!("Delay! sof_enabled? {}", self.bus.sof_enabled());
                         self.state = State::Enumeration(state);
                         poll_result = PollResult::PollAgain(state.delay().unwrap())
                     },
                     other => {
-                        debug!("Enumeration: {}", other);
                         self.state = State::Enumeration(other);
                     }
                 }
