@@ -34,8 +34,12 @@ pub enum Event {
 
 /// Result returned from `UsbHost::poll`.
 pub enum PollResult {
-    /// Nothing special to report. Poll again when another interrupt happens
-    None,
+    /// There is no device attached. It does not make sense to do anything else with the UsbHost instance, until a device was attached.
+    NoDevice,
+    /// Bus is currently busy talking to a device. Calling any transfer methods on the device will return a `WouldBlock` error.
+    Busy,
+    /// A device is attached and the bus is available. The caller can use the UsbHost instance to start a transfer or configure an interrupt.
+    Idle,
     /// Poll again after the given duration. This is used to implement delays in the enumeration process, without blocking.
     PollAgain(fugit::MillisDurationU32),
 }
@@ -133,8 +137,6 @@ impl<B: HostBus> UsbHost<B> {
     pub fn poll(&mut self, delay_complete: bool) -> PollResult {
         let bus_result = self.bus.poll();
 
-        let mut poll_result = PollResult::None;
-
         let event = if delay_complete {
             debug!("USB delay complete");
             Event::DelayComplete
@@ -168,6 +170,8 @@ impl<B: HostBus> UsbHost<B> {
             Event::None
         };
 
+        let mut delay = None;
+
         match &self.state {
             State::Enumeration(enumeration_state) => {
                 match enumeration::process_enumeration(event, *enumeration_state, self) {
@@ -176,7 +180,7 @@ impl<B: HostBus> UsbHost<B> {
                     }
                     state if state.delay().is_some() => {
                         self.state = State::Enumeration(state);
-                        poll_result = PollResult::PollAgain(state.delay().unwrap())
+                        delay = state.delay();
                     },
                     other => {
                         self.state = State::Enumeration(other);
@@ -190,6 +194,14 @@ impl<B: HostBus> UsbHost<B> {
             }
         }
 
-        poll_result
+        if let Some(delay) = delay {
+            PollResult::PollAgain(delay)
+        } else if let State::Enumeration(EnumerationState::WaitForDevice) = self.state {
+            PollResult::NoDevice
+        } else if self.current_transfer.is_some() {
+            PollResult::Busy
+        } else {
+            PollResult::Idle
+        }
     }
 }
