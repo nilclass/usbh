@@ -80,7 +80,7 @@ impl<B: HostBus> UsbHost<B> {
         }
 
         self.current_transfer = Some(transfer::Transfer::new_control_in(length));
-        self.bus.set_address(dev_addr, 0);
+        self.bus.set_recipient(dev_addr, 0);
         self.bus.write_setup(setup);
 
         Ok(())
@@ -92,7 +92,7 @@ impl<B: HostBus> UsbHost<B> {
         }
 
         self.current_transfer = Some(transfer::Transfer::new_control_out(data.len() as u16));
-        self.bus.set_address(dev_addr, 0);
+        self.bus.set_recipient(dev_addr, 0);
         self.bus.prepare_data_out(data);
         self.bus.write_setup(setup);
 

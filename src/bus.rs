@@ -22,7 +22,7 @@ pub trait HostBus {
     /// Set device address and endpoint for future communication
     ///
     /// A `dev_addr` of `0` is represented as `None`.
-    fn set_address(&mut self, dev_addr: Option<DeviceAddress>, endpoint: u8);
+    fn set_recipient(&mut self, dev_addr: Option<DeviceAddress>, endpoint: u8);
 
     /// Write a SETUP packet to the bus
     fn write_setup(&mut self, setup: SetupPacket);
