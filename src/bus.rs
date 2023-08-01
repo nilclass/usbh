@@ -1,4 +1,4 @@
-use crate::types::{ConnectionSpeed, SetupPacket, DeviceAddress};
+use crate::types::{ConnectionSpeed, SetupPacket, DeviceAddress, TransferType};
 use fugit::MillisDuration;
 use defmt::Format;
 
@@ -22,7 +22,7 @@ pub trait HostBus {
     /// Set device address and endpoint for future communication
     ///
     /// A `dev_addr` of `0` is represented as `None`.
-    fn set_recipient(&mut self, dev_addr: Option<DeviceAddress>, endpoint: u8);
+    fn set_recipient(&mut self, dev_addr: Option<DeviceAddress>, endpoint: u8, transfer_type: TransferType);
 
     /// Write a SETUP packet to the bus
     fn write_setup(&mut self, setup: SetupPacket);
@@ -45,6 +45,10 @@ pub trait HostBus {
     fn poll(&mut self) -> PollResult;
 
     fn process_received_data<F: FnOnce(&[u8]) -> T, T>(&self, f: F) -> T;
+
+    unsafe fn control_buffer(&self, len: usize) -> &[u8];
+
+    fn create_interrupt_pipe(&mut self, device_address: DeviceAddress, endpoint_number: u8, size: u16) -> u32;
 }
 
 pub struct PollResult {
@@ -66,6 +70,8 @@ pub enum Event {
     Resume,
     /// An error has occured (details in the Error)
     Error(Error),
+    /// Data from interrupt pipe is available
+    InterruptData(u8),
 }
 
 #[derive(Copy, Clone, Format)]

@@ -5,7 +5,7 @@ use crate::types::{
 use crate::bus::HostBus;
 use crate::{UsbHost, Event};
 use usb_device::control::Recipient;
-use defmt::Format;
+use defmt::{debug, Format};
 
 #[derive(Copy, Clone, Format)]
 pub enum EnumerationState {
@@ -30,7 +30,7 @@ pub enum EnumerationState {
 impl EnumerationState {
     pub(crate) fn delay(&self) -> Option<fugit::MillisDurationU32> {
         match self {
-            EnumerationState::Delay0 => Some(fugit::MillisDurationU32::millis(20)),
+            EnumerationState::Delay0 => Some(fugit::MillisDurationU32::millis(10)),
             EnumerationState::Delay1 => Some(fugit::MillisDurationU32::millis(10)),
             _ => None,
         }
@@ -42,6 +42,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
         EnumerationState::WaitForDevice => {
             match event {
                 Event::Attached(_) => {
+                    debug!("[UsbHost enumeration] -> Reset0");
                     host.bus.reset_bus();
                     EnumerationState::Reset0
                 },
@@ -54,6 +55,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
             match event {
                 Event::Attached(_) => {
                     host.bus.enable_sof();
+                    debug!("[UsbHost enumeration] -> Delay0");
                     EnumerationState::Delay0
                 }
                 _ => state,
@@ -64,6 +66,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
             match event {
                 Event::DelayComplete => {
                     host.get_descriptor(None, Recipient::Device, DescriptorType::Device, 8);
+                    debug!("[UsbHost enumeration] -> WaitDescriptor");
                     EnumerationState::WaitDescriptor
                 },
                 Event::Detached => EnumerationState::WaitForDevice,
@@ -73,8 +76,12 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
 
         EnumerationState::WaitDescriptor => {
             match event {
-                Event::Detached => EnumerationState::WaitForDevice,
-                Event::ControlInData => {
+                Event::Detached => {
+                    debug!("[UsbHost enumeration] -> WaitForDevice");
+                    EnumerationState::WaitForDevice
+                },
+                Event::ControlInData(_) => {
+                    debug!("[UsbHost enumeration] -> Reset1");
                     host.bus.reset_bus();
                     EnumerationState::Reset1
                 }
@@ -86,6 +93,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
             match event {
                 Event::Attached(_) => {
                     host.bus.enable_sof();
+                    debug!("[UsbHost enumeration] -> Delay1");
                     EnumerationState::Delay1
                 }
                 // TODO: handle timeouts
@@ -98,17 +106,27 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                 Event::DelayComplete => {
                     let address = host.next_address();
                     host.set_address(address);
+                    debug!("[UsbHost enumeration] -> WaitSetAddress");
                     EnumerationState::WaitSetAddress(address)
                 },
-                Event::Detached => EnumerationState::WaitForDevice,
+                Event::Detached => {
+                    debug!("[UsbHost enumeration] -> WaitForDevice");
+                    EnumerationState::WaitForDevice
+                },
                 _ => state,
             }
         }
 
         EnumerationState::WaitSetAddress(address) => {
             match event {
-                Event::Detached => EnumerationState::WaitForDevice,
-                Event::ControlOutComplete => EnumerationState::Assigned(address),
+                Event::Detached => {
+                    debug!("[UsbHost enumeration] -> WaitForDevice");
+                    EnumerationState::WaitForDevice
+                },
+                Event::ControlOutComplete => {
+                    debug!("[UsbHost enumeration] -> Assigned({})", address);
+                    EnumerationState::Assigned(address)
+                },
                 _ => state,
             }
         },

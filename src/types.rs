@@ -54,6 +54,14 @@ impl Format for ConnectionSpeed {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum TransferType {
+    Control,
+    Isochronous,
+    Bulk,
+    Interrupt,
+}
+
 #[repr(u8)]
 pub enum DescriptorType {
     Device = 1,

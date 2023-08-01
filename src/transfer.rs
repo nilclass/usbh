@@ -8,7 +8,8 @@ pub struct Transfer {
 }
 
 enum TransferState {
-    Control(UsbDirection, ControlState)
+    Control(UsbDirection, ControlState),
+    Interrupt(UsbDirection),
 }
 
 enum ControlState {
@@ -20,6 +21,8 @@ enum ControlState {
 pub enum PollResult {
     ControlInComplete(u16),
     ControlOutComplete,
+    InterruptInComplete(u16),
+    InterruptOutComplete,
     Continue(Transfer),
 }
 
@@ -35,6 +38,13 @@ impl Transfer {
         Self {
             length,
             state: TransferState::Control(UsbDirection::Out, ControlState::WaitSetup),
+        }
+    }
+
+    pub fn new_interrupt_in(length: u16) -> Self {
+        Self {
+            length,
+            state: TransferState::Interrupt(UsbDirection::In),
         }
     }
 
@@ -71,6 +81,8 @@ impl Transfer {
                     ControlState::WaitConfirm => PollResult::ControlOutComplete,
                 }
             }
+            Transfer { state: TransferState::Interrupt(UsbDirection::In), length } => PollResult::InterruptInComplete(length),
+            Transfer { state: TransferState::Interrupt(UsbDirection::Out), .. } => PollResult::InterruptOutComplete,
         }
     }
 }
