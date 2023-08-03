@@ -3,8 +3,14 @@
 pub mod types;
 pub mod bus;
 pub mod driver;
+
+//pub mod drivers;
+//pub mod pipe;
+
 mod enumeration;
 mod transfer;
+
+mod descriptor;
 
 use core::num::NonZeroU8;
 use bus::HostBus;
@@ -19,6 +25,7 @@ enum State {
     Assigned(DeviceAddress),
 }
 
+#[derive(Debug)]
 pub struct WouldBlock;
 
 #[derive(Copy, Clone, Format)]
@@ -33,6 +40,7 @@ pub enum Event {
     InterruptOutComplete,
     Stall,
     Resume,
+    BuffReady(u8),
     BusError(bus::Error),
 }
 
@@ -107,14 +115,14 @@ impl<B: HostBus> UsbHost<B> {
         Ok(())
     }
 
-    pub fn interrupt_in(&mut self, dev_addr: DeviceAddress, ep: u8, length: u16) -> Result<(), WouldBlock> {
+    pub fn interrupt_in(&mut self, dev_addr: DeviceAddress, ep: u8, length: u16, pid: bool) -> Result<(), WouldBlock> {
         if self.current_transfer.is_some() {
             return Err(WouldBlock)
         }
 
         self.current_transfer = Some(transfer::Transfer::new_interrupt_in(length));
         self.bus.set_recipient(Some(dev_addr), ep, TransferType::Interrupt);
-        self.bus.write_data_in(length);
+        self.bus.write_data_in(length, pid);
 
         Ok(())
     }
@@ -173,7 +181,9 @@ impl<B: HostBus> UsbHost<B> {
         let event = if delay_complete {
             Event::DelayComplete
         } else if let Some(event) = bus_result.event {
-            debug!("[UsbHost] Bus Event {}", event);
+            if event != bus::Event::Sof {
+                //debug!("[UsbHost] Bus Event {}", event);
+            }
             match event {
                 bus::Event::Attached(speed) => Event::Attached(speed),
                 bus::Event::Detached => Event::Detached,
@@ -206,10 +216,14 @@ impl<B: HostBus> UsbHost<B> {
                     panic!("ERROR");
                     Event::BusError(error)
                 },
-                bus::Event::InterruptData(x) => {
-                    info!("INTERRUPT DATA AVAILABLE??? buff status {}", x);
-                    Event::None
+                bus::Event::BuffReady(index) => {
+                    if index != 0 {
+                        Event::BuffReady(index)
+                    } else {
+                        Event::None
+                    }
                 }
+                bus::Event::Sof => Event::None,
             }
         } else {
             info!("??");
@@ -246,6 +260,11 @@ impl<B: HostBus> UsbHost<B> {
                     Event::ControlOutComplete => driver.transfer_out_complete(*device_address, self),
                     Event::InterruptInComplete(len) => driver.interrupt_in_complete(*device_address, len as usize, self),
                     Event::InterruptOutComplete => driver.interrupt_out_complete(*device_address, self),
+                    Event::BuffReady(n) => {
+                        let buf = self.bus.pipe_buf(n);
+                        driver.pipe_event(*device_address, buf);
+                        self.bus.pipe_continue(n);
+                    },
                     _ => {}
                 }
             }

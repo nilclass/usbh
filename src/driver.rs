@@ -20,4 +20,6 @@ pub trait Driver<B: HostBus> {
     fn interrupt_in_complete(&mut self, device_address: DeviceAddress, length: usize, host: &mut UsbHost<B>);
 
     fn interrupt_out_complete(&mut self, device_address: DeviceAddress, host: &mut UsbHost<B>);
+
+    fn pipe_event(&mut self, device_address: DeviceAddress, data: &[u8]);
 }

@@ -28,7 +28,7 @@ pub trait HostBus {
     fn write_setup(&mut self, setup: SetupPacket);
 
     /// Write a DATA IN packet to the bus, and receive `length`
-    fn write_data_in(&mut self, length: u16);
+    fn write_data_in(&mut self, length: u16, pid: bool);
 
     /// Write a DATA OUT packet to the bus, after loading the given `data` into the output buffer
     fn write_data_out(&mut self, data: &[u8]) {
@@ -48,7 +48,15 @@ pub trait HostBus {
 
     unsafe fn control_buffer(&self, len: usize) -> &[u8];
 
-    fn create_interrupt_pipe(&mut self, device_address: DeviceAddress, endpoint_number: u8, size: u16) -> u32;
+    fn create_interrupt_pipe(&mut self, device_address: DeviceAddress, endpoint_number: u8, size: u16, interval: u8) -> u32;
+
+    fn received_len(&self) -> u16;
+
+    fn dump_dpram(&self);
+
+    fn pipe_buf(&self, pipe_index: u8) -> &[u8];
+
+    fn pipe_continue(&self, pipe_index: u8);
 }
 
 pub struct PollResult {
@@ -56,7 +64,7 @@ pub struct PollResult {
     pub poll_again_after: Option<MillisDuration<u8>>,
 }
 
-#[derive(Copy, Clone, Format)]
+#[derive(Copy, Clone, Format, PartialEq)]
 pub enum Event {
     /// A new device was attached, with given speed
     Attached(ConnectionSpeed),
@@ -71,10 +79,11 @@ pub enum Event {
     /// An error has occured (details in the Error)
     Error(Error),
     /// Data from interrupt pipe is available
-    InterruptData(u8),
+    BuffReady(u8),
+    Sof,
 }
 
-#[derive(Copy, Clone, Format)]
+#[derive(Copy, Clone, Format, PartialEq)]
 pub enum Error {
     /// CRC mismatch
     Crc,

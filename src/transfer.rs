@@ -53,21 +53,23 @@ impl Transfer {
             Transfer { state: TransferState::Control(UsbDirection::In, control_state), length } => {
                 match control_state {
                     ControlState::WaitSetup => {
-                        host.bus.write_data_in(length);
+                        host.bus.write_data_in(length, true);
                         PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::In, ControlState::WaitData), length })
                     }
                     ControlState::WaitData => {
                         host.bus.write_data_out(&[]);
                         PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::In, ControlState::WaitConfirm), length })
                     }
-                    ControlState::WaitConfirm => PollResult::ControlInComplete(length),
+                    ControlState::WaitConfirm => {
+                        PollResult::ControlInComplete(length)
+                    },
                 }
             }
             Transfer { state: TransferState::Control(UsbDirection::Out, control_state), length } => {
                 match control_state {
                     ControlState::WaitSetup => {
                         if length == 0 {
-                            host.bus.write_data_in(0);
+                            host.bus.write_data_in(0, true);
                             PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::Out, ControlState::WaitConfirm), length })
                         } else {
                             host.bus.write_data_out_prepared();
@@ -75,10 +77,12 @@ impl Transfer {
                         }
                     },
                     ControlState::WaitData => {
-                        host.bus.write_data_in(0);
+                        host.bus.write_data_in(0, true);
                         PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::Out, ControlState::WaitConfirm), length })
                     },
-                    ControlState::WaitConfirm => PollResult::ControlOutComplete,
+                    ControlState::WaitConfirm => {
+                        PollResult::ControlOutComplete
+                    },
                 }
             }
             Transfer { state: TransferState::Interrupt(UsbDirection::In), length } => PollResult::InterruptInComplete(length),

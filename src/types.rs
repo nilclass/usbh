@@ -36,6 +36,21 @@ impl Port {
 #[derive(Clone, Copy, PartialEq, Format)]
 pub struct VidPid(u16, u16);
 
+#[derive(Clone, Copy, PartialEq)]
+pub struct Bcd16(pub(crate) u16);
+
+impl Format for Bcd16 {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(
+            fmt, "{}{}{}{}",
+            (self.0 >> 12) & 0xF,
+            (self.0 >> 8) & 0xF,
+            (self.0 >> 4) & 0xF,
+            self.0 & 0xF,
+        )
+    }
+}
+
 /// Refers to the speed at which a device operates
 #[derive(Copy, Clone, PartialEq)]
 pub enum ConnectionSpeed {
@@ -55,11 +70,12 @@ impl Format for ConnectionSpeed {
 }
 
 #[derive(Copy, Clone)]
+#[repr(u8)]
 pub enum TransferType {
-    Control,
-    Isochronous,
-    Bulk,
-    Interrupt,
+    Control = 0,
+    Isochronous = 1,
+    Bulk = 2,
+    Interrupt = 3,
 }
 
 #[repr(u8)]
