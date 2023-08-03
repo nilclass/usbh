@@ -7,22 +7,30 @@ pub mod driver;
 //pub mod drivers;
 //pub mod pipe;
 
-mod enumeration;
 mod transfer;
+mod enumeration;
+mod discovery;
 
-mod descriptor;
+pub mod descriptor;
 
 use core::num::NonZeroU8;
 use bus::HostBus;
 use types::{DeviceAddress, DescriptorType, SetupPacket, TransferType};
 use enumeration::EnumerationState;
+use discovery::DiscoveryState;
 use usb_device::{UsbDirection, control::{Recipient, RequestType, Request}};
 use defmt::{info, debug, Format};
+
+const MAX_PIPES: usize = 32;
 
 #[derive(Copy, Clone)]
 enum State {
     Enumeration(EnumerationState),
-    Assigned(DeviceAddress),
+    Discovery(DeviceAddress, DiscoveryState),
+    Configuring(DeviceAddress, u8),
+    Configured(DeviceAddress, u8),
+    // No driver is interested.
+    Dormant(DeviceAddress),
 }
 
 #[derive(Debug)]
@@ -33,15 +41,13 @@ pub enum Event {
     None,
     Attached(types::ConnectionSpeed),
     Detached,
-    DelayComplete,
-    ControlInData(u16),
-    ControlOutComplete,
-    InterruptInComplete(u16),
-    InterruptOutComplete,
+    ControlInData(Option<PipeId>, u16),
+    ControlOutComplete(Option<PipeId>),
     Stall,
     Resume,
-    BuffReady(u8),
+    InterruptPipe(u8),
     BusError(bus::Error),
+    Sof,
 }
 
 /// Result returned from `UsbHost::poll`.
@@ -52,16 +58,36 @@ pub enum PollResult {
     Busy,
     /// A device is attached and the bus is available. The caller can use the UsbHost instance to start a transfer or configure an interrupt.
     Idle,
-    /// Poll again after the given duration. This is used to implement delays in the enumeration process, without blocking.
-    PollAgain(fugit::MillisDurationU32),
+
+    BusError(bus::Error),
 }
 
 pub struct UsbHost<B> {
     bus: B,
     state: State,
-    current_transfer: Option<transfer::Transfer>,
+    active_transfer: Option<(Option<PipeId>, transfer::Transfer)>,
     last_address: u8,
+    pipes: [Option<Pipe>; MAX_PIPES],
 }
+
+unsafe impl<B> Send for UsbHost<B> {}
+
+#[derive(Copy, Clone)]
+enum Pipe {
+    Control {
+        dev_addr: DeviceAddress,
+    },
+    Interrupt {
+        dev_addr: DeviceAddress,
+        bus_ref: u8,
+        direction: UsbDirection,
+        size: u16,
+        ptr: *mut u8,
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Format)]
+pub struct PipeId(u8);
 
 impl<B: HostBus> UsbHost<B> {
     pub fn new(mut bus: B) -> Self {
@@ -69,16 +95,39 @@ impl<B: HostBus> UsbHost<B> {
         Self {
             bus,
             state: State::Enumeration(EnumerationState::WaitForDevice),
-            current_transfer: None,
+            active_transfer: None,
             last_address: 0,
+            pipes: [None; MAX_PIPES],
         }
+    }
+
+    fn alloc_pipe(&mut self) -> Option<(PipeId, &mut Option<Pipe>)> {
+        self.pipes.iter_mut().enumerate().find(|(_, slot)| slot.is_none()).map(|(i, slot)| (PipeId(i as u8), slot))
+    }
+
+    pub fn create_control_pipe(&mut self, dev_addr: DeviceAddress) -> Option<PipeId> {
+        self.alloc_pipe().map(|(id, slot)| {
+            slot.replace(Pipe::Control { dev_addr });
+            id
+        })
+    }
+
+    pub fn create_interrupt_pipe(&mut self, dev_addr: DeviceAddress, ep_number: u8, direction: UsbDirection, size: u16, interval: u8) -> Option<PipeId> {
+        self.bus().create_interrupt_pipe(dev_addr, ep_number, direction, size, interval)
+            .and_then(|(ptr, bus_ref)| {
+                self.alloc_pipe().map(|(id, slot)| {
+                    slot.replace(Pipe::Interrupt { dev_addr, bus_ref, direction, size, ptr });
+                    id
+                })
+            })
     }
 
     pub fn reset(&mut self) {
         self.bus.reset_controller();
         self.state = State::Enumeration(EnumerationState::WaitForDevice);
-        self.current_transfer = None;
+        self.active_transfer = None;
         self.last_address = 0;
+        self.pipes = [None; MAX_PIPES];
     }
 
     /// Returns the next unassigned address, and increments the counter
@@ -90,24 +139,24 @@ impl<B: HostBus> UsbHost<B> {
         DeviceAddress(NonZeroU8::new(self.last_address).unwrap())
     }
 
-    pub fn control_in(&mut self, dev_addr: Option<DeviceAddress>, setup: SetupPacket, length: u16) -> Result<(), WouldBlock> {
-        if self.current_transfer.is_some() {
+    fn control_in(&mut self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>, setup: SetupPacket, length: u16) -> Result<(), WouldBlock> {
+        if self.active_transfer.is_some() {
             return Err(WouldBlock)
         }
 
-        self.current_transfer = Some(transfer::Transfer::new_control_in(length));
+        self.active_transfer = Some((pipe_id, transfer::Transfer::new_control_in(length)));
         self.bus.set_recipient(dev_addr, 0, TransferType::Control);
         self.bus.write_setup(setup);
 
         Ok(())
     }
 
-    pub fn control_out(&mut self, dev_addr: Option<DeviceAddress>, setup: SetupPacket, data: &[u8]) -> Result<(), WouldBlock> {
-        if self.current_transfer.is_some() {
+    fn control_out(&mut self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>, setup: SetupPacket, data: &[u8]) -> Result<(), WouldBlock> {
+        if self.active_transfer.is_some() {
             return Err(WouldBlock)
         }
 
-        self.current_transfer = Some(transfer::Transfer::new_control_out(data.len() as u16));
+        self.active_transfer = Some((pipe_id, transfer::Transfer::new_control_out(data.len() as u16)));
         self.bus.set_recipient(dev_addr, 0, TransferType::Control);
         self.bus.prepare_data_out(data);
         self.bus.write_setup(setup);
@@ -115,32 +164,21 @@ impl<B: HostBus> UsbHost<B> {
         Ok(())
     }
 
-    pub fn interrupt_in(&mut self, dev_addr: DeviceAddress, ep: u8, length: u16, pid: bool) -> Result<(), WouldBlock> {
-        if self.current_transfer.is_some() {
-            return Err(WouldBlock)
-        }
-
-        self.current_transfer = Some(transfer::Transfer::new_interrupt_in(length));
-        self.bus.set_recipient(Some(dev_addr), ep, TransferType::Interrupt);
-        self.bus.write_data_in(length, pid);
-
-        Ok(())
-    }
-
-    pub fn get_descriptor(&mut self, dev_addr: Option<DeviceAddress>, recipient: Recipient, descriptor_type: DescriptorType, length: u16) -> Result<(), WouldBlock> {
-        self.control_in(dev_addr, SetupPacket::new(
+    pub fn get_descriptor(&mut self, dev_addr: Option<DeviceAddress>, recipient: Recipient, descriptor_type: DescriptorType, descriptor_index: u8, length: u16) -> Result<(), WouldBlock> {
+        defmt::info!("GetDescriptor {} {} {} {} {}", dev_addr, recipient, descriptor_type, descriptor_index, length);
+        self.control_in(dev_addr, None, SetupPacket::new(
             UsbDirection::In,
             RequestType::Standard,
             recipient,
             Request::GET_DESCRIPTOR,
-            (descriptor_type as u16) << 8,
+            ((descriptor_type as u16) << 8) | (descriptor_index as u16),
             0,
             length,
         ), length)
     }
 
     pub fn set_address(&mut self, address: DeviceAddress) -> Result<(), WouldBlock> {
-        self.control_out(None, SetupPacket::new(
+        self.control_out(None, None, SetupPacket::new(
             UsbDirection::Out,
             RequestType::Standard,
             Recipient::Device,
@@ -153,7 +191,7 @@ impl<B: HostBus> UsbHost<B> {
 
     pub fn set_configuration(&mut self, address: DeviceAddress, configuration: u8) -> Result<(), WouldBlock> {
         debug!("[UsbHost:{}] SetConfiguration({})", address, configuration);
-        self.control_out(Some(address), SetupPacket::new(
+        self.control_out(Some(address), None, SetupPacket::new(
             UsbDirection::Out,
             RequestType::Standard,
             Recipient::Device,
@@ -172,30 +210,23 @@ impl<B: HostBus> UsbHost<B> {
     ///
     /// If the host implementation has an interrupt that fires on USB activity, then calling it once in that interrupt handler is enough.
     /// Otherwise make sure to call it at least once per millisecond.
-    ///
-    /// By default `delay_complete` should be passed as `false`.
-    /// Only if `PollResult::PollAgain` was returned, `poll(true)` should be called once after the delay has passed.
-    pub fn poll(&mut self, delay_complete: bool, driver: &mut dyn driver::Driver<B>) -> PollResult {
+    pub fn poll(&mut self, driver: &mut dyn driver::Driver<B>) -> PollResult {
         let bus_result = self.bus.poll();
 
-        let event = if delay_complete {
-            Event::DelayComplete
-        } else if let Some(event) = bus_result.event {
+        let event = if let Some(event) = bus_result.event {
             if event != bus::Event::Sof {
                 //debug!("[UsbHost] Bus Event {}", event);
             }
             match event {
                 bus::Event::Attached(speed) => Event::Attached(speed),
                 bus::Event::Detached => Event::Detached,
-                bus::Event::WriteComplete => {
-                    if let Some(transfer) = self.current_transfer.take() {
+                bus::Event::TransComplete => {
+                    if let Some((pipe_id, transfer)) = self.active_transfer.take() {
                         match transfer.stage_complete(self) {
-                            transfer::PollResult::ControlInComplete(length) => Event::ControlInData(length),
-                            transfer::PollResult::ControlOutComplete => Event::ControlOutComplete,
-                            transfer::PollResult::InterruptInComplete(length) => Event::InterruptInComplete(length),
-                            transfer::PollResult::InterruptOutComplete => Event::InterruptOutComplete,
+                            transfer::PollResult::ControlInComplete(length) => Event::ControlInData(pipe_id, length),
+                            transfer::PollResult::ControlOutComplete => Event::ControlOutComplete(pipe_id),
                             transfer::PollResult::Continue(transfer) => {
-                                self.current_transfer = Some(transfer);
+                                self.active_transfer = Some((pipe_id, transfer));
                                 Event::None
                             }
                         }
@@ -213,68 +244,135 @@ impl<B: HostBus> UsbHost<B> {
                     Event::Stall
                 },
                 bus::Event::Error(error) => {
-                    panic!("ERROR");
                     Event::BusError(error)
                 },
-                bus::Event::BuffReady(index) => {
-                    if index != 0 {
-                        Event::BuffReady(index)
-                    } else {
-                        Event::None
-                    }
+                bus::Event::InterruptPipe(buf_ref) => {
+                    Event::InterruptPipe(buf_ref)
                 }
-                bus::Event::Sof => Event::None,
+                bus::Event::Sof => Event::Sof,
             }
         } else {
             info!("??");
             Event::None
         };
 
-        let mut delay = None;
-
         match &self.state {
             State::Enumeration(enumeration_state) => {
                 match enumeration::process_enumeration(event, *enumeration_state, self) {
-                    EnumerationState::Assigned(address) => {
-                        info!("[UsbHost] Assigned address {}", address);
-                        self.state = State::Assigned(address);
-                        driver.attached(address, self);
+                    EnumerationState::Assigned(speed, dev_addr) => {
+                        info!("[UsbHost] Assigned address {} (speed: {})", dev_addr, speed);
+                        driver.attached(dev_addr, speed);
+                        let discovery_state = discovery::start_discovery(dev_addr, self);
+                        self.state = State::Discovery(dev_addr, discovery_state);
                     }
-                    state if state.delay().is_some() => {
-                        self.state = State::Enumeration(state);
-                        delay = state.delay();
-                    },
                     other => {
                         self.state = State::Enumeration(other);
                     }
                 };
             }
 
-            State::Assigned(device_address) => {
+            State::Discovery(dev_addr, discovery_state) => {
+                let dev_addr = *dev_addr;
+                match discovery::process_discovery(event, dev_addr, *discovery_state, driver, self) {
+                    DiscoveryState::Done => {
+                        if let Some(config) = driver.configure(dev_addr) {
+                            self.set_configuration(dev_addr, config);
+                            self.state = State::Configuring(dev_addr, config);
+                        } else {
+                            self.state = State::Dormant(dev_addr);
+                        }
+                    }
+                    other => {
+                        self.state = State::Discovery(dev_addr, other);
+                    }
+                }
+            }
+
+            State::Configuring(dev_addr, config) => {
+                let dev_addr = *dev_addr;
+                let config = *config;
+                match event {
+                    Event::ControlOutComplete(_) => {
+                        driver.configured(dev_addr, config, self);
+                        defmt::info!("Configured.");
+                        self.state = State::Configured(dev_addr, config);
+                    }
+                    Event::Detached => {
+                        driver.detached(dev_addr);
+                        self.reset();
+                    }
+                    _ => {}
+                }
+            }
+
+            State::Configured(dev_addr, _config) => {
                 match event {
                     Event::Detached => {
-                        driver.detached(*device_address);
-                        self.bus.reset_controller();
+                        driver.detached(*dev_addr);
+                        self.reset();
                     }
-                    Event::ControlInData(len) => driver.transfer_in_complete(*device_address, len as usize, self),
-                    Event::ControlOutComplete => driver.transfer_out_complete(*device_address, self),
-                    Event::InterruptInComplete(len) => driver.interrupt_in_complete(*device_address, len as usize, self),
-                    Event::InterruptOutComplete => driver.interrupt_out_complete(*device_address, self),
-                    Event::BuffReady(n) => {
-                        let buf = self.bus.pipe_buf(n);
-                        driver.pipe_event(*device_address, buf);
-                        self.bus.pipe_continue(n);
+                    Event::ControlInData(pipe_id, len) => {
+                        if let Some(pipe_id) = pipe_id {
+                            let data = unsafe { self.bus.control_buffer(len as usize) };
+                            driver.completed_control(*dev_addr, pipe_id, Some(data));
+                        }
                     },
+                    Event::ControlOutComplete(pipe_id) => {
+                        if let Some(pipe_id) = pipe_id {
+                            driver.completed_control(*dev_addr, pipe_id, None);
+                        }
+                    },
+
+                    Event::InterruptPipe(pipe_ref) => {
+                        defmt::debug!("Interrupt pipe {}", pipe_ref);
+                        let matching_pipe = self.pipes.iter()
+                            .enumerate()
+                            .find(|(_, pipe)| {
+                                if let Some(Pipe::Interrupt { bus_ref, .. }) = pipe {
+                                    *bus_ref == pipe_ref
+                                } else {
+                                    false
+                                }
+                            })
+                            .map(|(id, pipe)| (PipeId(id as u8), pipe.unwrap()));
+
+                        if let Some((pipe_id, Pipe::Interrupt { dev_addr, size, ptr, direction, .. })) = matching_pipe {
+                            match direction {
+                                UsbDirection::In => {
+                                    let buf = unsafe { core::slice::from_raw_parts(ptr, size as usize) };
+                                    driver.completed_in(dev_addr, pipe_id, buf);
+                                },
+                                UsbDirection::Out => {
+                                    let buf = unsafe { core::slice::from_raw_parts_mut(ptr, size as usize) };
+                                    driver.completed_out(dev_addr, pipe_id, buf);
+                                },
+                            }
+                        }
+                        self.bus.pipe_continue(pipe_ref);
+                    },
+
+                    Event::BusError(error) => {
+                        return PollResult::BusError(error)
+                    }
+
+                    _ => {}
+                }
+            }
+
+            State::Dormant(dev_addr) => {
+                match event {
+                    Event::Detached => {
+                        driver.detached(*dev_addr);
+                        self.reset();
+                    }
                     _ => {}
                 }
             }
         }
 
-        if let Some(delay) = delay {
-            PollResult::PollAgain(delay)
-        } else if let State::Enumeration(EnumerationState::WaitForDevice) = self.state {
+        if let State::Enumeration(EnumerationState::WaitForDevice) = self.state {
             PollResult::NoDevice
-        } else if self.current_transfer.is_some() {
+        } else if self.active_transfer.is_some() {
             PollResult::Busy
         } else {
             PollResult::Idle

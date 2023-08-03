@@ -1,6 +1,7 @@
 use crate::types::{ConnectionSpeed, SetupPacket, DeviceAddress, TransferType};
 use fugit::MillisDuration;
 use defmt::Format;
+use usb_device::UsbDirection;
 
 pub trait HostBus {
     /// Reset the controller into it's initial state.
@@ -48,7 +49,9 @@ pub trait HostBus {
 
     unsafe fn control_buffer(&self, len: usize) -> &[u8];
 
-    fn create_interrupt_pipe(&mut self, device_address: DeviceAddress, endpoint_number: u8, size: u16, interval: u8) -> u32;
+    fn create_interrupt_pipe(&mut self, device_address: DeviceAddress, endpoint_number: u8, direction: UsbDirection, size: u16, interval: u8) -> Option<(*mut u8, u8)>;
+
+    fn release_interrupt_pipe(&mut self, pipe_ref: u8);
 
     fn received_len(&self) -> u16;
 
@@ -57,6 +60,16 @@ pub trait HostBus {
     fn pipe_buf(&self, pipe_index: u8) -> &[u8];
 
     fn pipe_continue(&self, pipe_index: u8);
+
+    /// Enable/disable interrupt on SOF
+    ///
+    /// While enabled, the host bus should generate (call `poll` on the hsot) whenever
+    /// a start-of-frame is sent.
+    /// This is used by the enumeration process to implement wait times.
+    ///
+    /// If the controller does not support SOF interrupts natively, they can be implemented
+    /// with a platform-specific timer.
+    fn interrupt_on_sof(&mut self, enable: bool);
 }
 
 pub struct PollResult {
@@ -70,16 +83,16 @@ pub enum Event {
     Attached(ConnectionSpeed),
     /// The device is no longer attached
     Detached,
-    /// A write (SETUP, DATA IN or DATA OUT) has completed
-    WriteComplete,
+    /// A control transaction (SETUP, DATA IN or DATA OUT) has completed
+    TransComplete,
     /// Device sent a STALL. This usually means that the device does not understand our communication
     Stall,
     /// Device has resumed from sleep?
     Resume,
     /// An error has occured (details in the Error)
     Error(Error),
-    /// Data from interrupt pipe is available
-    BuffReady(u8),
+    /// Data from interrupt pipe is available to be read or written
+    InterruptPipe(u8),
     Sof,
 }
 

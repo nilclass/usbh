@@ -69,7 +69,7 @@ impl Format for ConnectionSpeed {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum TransferType {
     Control = 0,
@@ -78,6 +78,7 @@ pub enum TransferType {
     Interrupt = 3,
 }
 
+#[derive(Copy, Clone, Format)]
 #[repr(u8)]
 pub enum DescriptorType {
     Device = 1,
