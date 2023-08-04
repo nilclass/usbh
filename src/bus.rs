@@ -55,8 +55,6 @@ pub trait HostBus {
 
     fn received_len(&self) -> u16;
 
-    fn dump_dpram(&self);
-
     fn pipe_buf(&self, pipe_index: u8) -> &[u8];
 
     fn pipe_continue(&self, pipe_index: u8);

@@ -294,7 +294,6 @@ impl<B: HostBus> UsbHost<B> {
                 match event {
                     Event::ControlOutComplete(_) => {
                         driver.configured(dev_addr, config, self);
-                        defmt::info!("Configured.");
                         self.state = State::Configured(dev_addr, config);
                     }
                     Event::Detached => {
@@ -311,12 +310,14 @@ impl<B: HostBus> UsbHost<B> {
                         driver.detached(*dev_addr);
                         self.reset();
                     }
+
                     Event::ControlInData(pipe_id, len) => {
                         if let Some(pipe_id) = pipe_id {
                             let data = unsafe { self.bus.control_buffer(len as usize) };
                             driver.completed_control(*dev_addr, pipe_id, Some(data));
                         }
                     },
+
                     Event::ControlOutComplete(pipe_id) => {
                         if let Some(pipe_id) = pipe_id {
                             driver.completed_control(*dev_addr, pipe_id, None);
@@ -324,7 +325,6 @@ impl<B: HostBus> UsbHost<B> {
                     },
 
                     Event::InterruptPipe(pipe_ref) => {
-                        defmt::debug!("Interrupt pipe {}", pipe_ref);
                         let matching_pipe = self.pipes.iter()
                             .enumerate()
                             .find(|(_, pipe)| {
