@@ -3,6 +3,7 @@ use crate::bus::HostBus;
 use crate::{UsbHost, PipeId};
 
 pub mod kbd;
+pub mod log;
 
 pub trait Driver<B: HostBus> {
     /// New device was attached, and got assigned the given address.

@@ -1,5 +1,12 @@
 use crate::types::{Bcd16, TransferType};
 use usb_device::UsbDirection;
+use defmt::Format;
+
+pub const TYPE_DEVICE: u8 = 1;
+pub const TYPE_CONFIGURATION: u8 = 2;
+pub const TYPE_STRING: u8 = 3;
+pub const TYPE_INTERFACE: u8 = 4;
+pub const TYPE_ENDPOINT: u8 = 5;
 
 pub struct Descriptor<'a> {
     pub length: u8,
@@ -9,6 +16,7 @@ pub struct Descriptor<'a> {
 
 /// A device descriptor describes general information about a USB device. It includes information that applies
 /// globally to the device and all of the device’s configurations. A USB device has only one device descriptor.
+#[derive(Format)]
 pub struct DeviceDescriptor {
     /// USB Specification Release Number in Binary-Coded Decimal (i.e., 2.10 is 210H).
     ///
@@ -75,6 +83,7 @@ pub struct DeviceDescriptor {
 ///
 /// The descriptor contains a bConfigurationValue field with a value that, when used as a parameter
 /// to the SetConfiguration() request, causes the device to assume the described configuration.
+#[derive(Format)]
 pub struct ConfigurationDescriptor {
     /// Total length of data returned for this configuration.
     ///
@@ -100,7 +109,7 @@ pub struct ConfigurationDescriptor {
     pub max_power: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Format)]
 pub struct ConfigurationAttributes(u8);
 
 /// Part of the [`ConfigurationDescriptor`]
@@ -126,6 +135,7 @@ impl ConfigurationAttributes {
 /// particular interface follow the interface descriptor in the data returned by the GetConfiguration() request.
 /// An interface descriptor is always returned as part of a configuration descriptor. Interface descriptors cannot
 /// be directly accessed with a GetDescriptor() or SetDescriptor() request.
+#[derive(Format)]
 pub struct InterfaceDescriptor {
     /// Number of this interface.
     ///
@@ -173,6 +183,7 @@ pub struct InterfaceDescriptor {
 /// Each endpoint used for an interface has its own descriptor.
 ///
 /// This descriptor contains the information required by the host to determine the bandwidth requirements of each endpoint.
+#[derive(Format)]
 pub struct EndpointDescriptor {
     /// The address of the endpoint on the USB device described by this descriptor.
     pub address: EndpointAddress,
@@ -189,7 +200,7 @@ pub struct EndpointDescriptor {
     pub interval: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Format)]
 /// Address of an endpoint
 ///
 /// Part of an [`EndpointDescriptor`].
@@ -209,7 +220,7 @@ impl EndpointAddress {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Format)]
 /// Attributes of an endpoint
 ///
 /// Part of an [`EndpointDescriptor`].

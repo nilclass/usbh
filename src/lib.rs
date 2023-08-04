@@ -60,6 +60,8 @@ pub enum PollResult {
     Idle,
 
     BusError(bus::Error),
+
+    DiscoveryError(DeviceAddress),
 }
 
 pub struct UsbHost<B> {
@@ -210,7 +212,7 @@ impl<B: HostBus> UsbHost<B> {
     ///
     /// If the host implementation has an interrupt that fires on USB activity, then calling it once in that interrupt handler is enough.
     /// Otherwise make sure to call it at least once per millisecond.
-    pub fn poll(&mut self, driver: &mut dyn driver::Driver<B>) -> PollResult {
+    pub fn poll(&mut self, drivers: &mut [&mut dyn driver::Driver<B>]) -> PollResult {
         let bus_result = self.bus.poll();
 
         let event = if let Some(event) = bus_result.event {
@@ -261,7 +263,9 @@ impl<B: HostBus> UsbHost<B> {
                 match enumeration::process_enumeration(event, *enumeration_state, self) {
                     EnumerationState::Assigned(speed, dev_addr) => {
                         info!("[UsbHost] Assigned address {} (speed: {})", dev_addr, speed);
-                        driver.attached(dev_addr, speed);
+                        for driver in drivers {
+                            driver.attached(dev_addr, speed);
+                        }
                         let discovery_state = discovery::start_discovery(dev_addr, self);
                         self.state = State::Discovery(dev_addr, discovery_state);
                     }
@@ -273,14 +277,25 @@ impl<B: HostBus> UsbHost<B> {
 
             State::Discovery(dev_addr, discovery_state) => {
                 let dev_addr = *dev_addr;
-                match discovery::process_discovery(event, dev_addr, *discovery_state, driver, self) {
+                match discovery::process_discovery(event, dev_addr, *discovery_state, drivers, self) {
                     DiscoveryState::Done => {
-                        if let Some(config) = driver.configure(dev_addr) {
+                        let mut chosen_config = None;
+                        for driver in drivers {
+                            if let Some(config) = driver.configure(dev_addr) {
+                                chosen_config = Some(config);
+                                break;
+                            }
+                        }
+                        if let Some(config) = chosen_config {
                             self.set_configuration(dev_addr, config);
                             self.state = State::Configuring(dev_addr, config);
                         } else {
                             self.state = State::Dormant(dev_addr);
                         }
+                    }
+                    DiscoveryState::ParseError => {
+                        self.state = State::Dormant(dev_addr);
+                        return PollResult::DiscoveryError(dev_addr);
                     }
                     other => {
                         self.state = State::Discovery(dev_addr, other);
@@ -293,11 +308,15 @@ impl<B: HostBus> UsbHost<B> {
                 let config = *config;
                 match event {
                     Event::ControlOutComplete(_) => {
-                        driver.configured(dev_addr, config, self);
+                        for driver in drivers {
+                            driver.configured(dev_addr, config, self);
+                        }
                         self.state = State::Configured(dev_addr, config);
                     }
                     Event::Detached => {
-                        driver.detached(dev_addr);
+                        for driver in drivers {
+                            driver.detached(dev_addr);
+                        }
                         self.reset();
                     }
                     _ => {}
@@ -307,20 +326,26 @@ impl<B: HostBus> UsbHost<B> {
             State::Configured(dev_addr, _config) => {
                 match event {
                     Event::Detached => {
-                        driver.detached(*dev_addr);
+                        for driver in drivers {
+                            driver.detached(*dev_addr);
+                        }
                         self.reset();
                     }
 
                     Event::ControlInData(pipe_id, len) => {
                         if let Some(pipe_id) = pipe_id {
                             let data = unsafe { self.bus.control_buffer(len as usize) };
-                            driver.completed_control(*dev_addr, pipe_id, Some(data));
+                            for driver in drivers {
+                                driver.completed_control(*dev_addr, pipe_id, Some(data));
+                            }
                         }
                     },
 
                     Event::ControlOutComplete(pipe_id) => {
                         if let Some(pipe_id) = pipe_id {
-                            driver.completed_control(*dev_addr, pipe_id, None);
+                            for driver in drivers {
+                                driver.completed_control(*dev_addr, pipe_id, None);
+                            }
                         }
                     },
 
@@ -340,11 +365,15 @@ impl<B: HostBus> UsbHost<B> {
                             match direction {
                                 UsbDirection::In => {
                                     let buf = unsafe { core::slice::from_raw_parts(ptr, size as usize) };
-                                    driver.completed_in(dev_addr, pipe_id, buf);
+                                    for driver in drivers {
+                                        driver.completed_in(dev_addr, pipe_id, buf);
+                                    }
                                 },
                                 UsbDirection::Out => {
                                     let buf = unsafe { core::slice::from_raw_parts_mut(ptr, size as usize) };
-                                    driver.completed_out(dev_addr, pipe_id, buf);
+                                    for driver in drivers {
+                                        driver.completed_out(dev_addr, pipe_id, buf);
+                                    }
                                 },
                             }
                         }
@@ -362,7 +391,9 @@ impl<B: HostBus> UsbHost<B> {
             State::Dormant(dev_addr) => {
                 match event {
                     Event::Detached => {
-                        driver.detached(*dev_addr);
+                        for driver in drivers {
+                            driver.detached(*dev_addr);
+                        }
                         self.reset();
                     }
                     _ => {}

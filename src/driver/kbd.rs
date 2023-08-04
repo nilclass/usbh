@@ -46,7 +46,7 @@ struct ConfiguredKbdDevice {
     interface: u8,
     control_pipe: PipeId,
     interrupt_pipe: PipeId,
-    input_report: [u8; 8],
+    output_report: u8,
 }
 
 impl PendingKbdDevice {
@@ -55,13 +55,18 @@ impl PendingKbdDevice {
     }
 }
 
-
 #[derive(Copy, Clone, defmt::Format)]
 #[repr(packed)]
 pub struct InputReport {
-    modifier_status: ModifierStatus,
+    pub modifier_status: ModifierStatus,
     _reserved: u8,
-    keypress: [Option<NonZeroU8>; 6],
+    pub keypress: [Option<NonZeroU8>; 6],
+}
+
+impl InputReport {
+    pub fn pressed_keys(&self) -> impl Iterator<Item = u8> + '_ {
+        self.keypress.iter().filter_map(|opt| *opt).map(|code| code.into())
+    }
 }
 
 impl<'a> TryFrom<&'a [u8]> for &'a InputReport {
@@ -115,6 +120,16 @@ pub enum KbdEvent {
     ControlComplete(DeviceAddress),
 }
 
+#[derive(Copy, Clone)]
+#[repr(u8)]
+pub enum KbdLed {
+    NumLock = 0,
+    CapsLock = 1,
+    ScrollLock = 2,
+    Compose = 3,
+    Kana = 4,
+}
+
 impl<const MAX_DEVICES: usize> Kbd<MAX_DEVICES> {
     pub fn new() -> Self {
         Self { devices: [None; MAX_DEVICES], event: None }
@@ -127,6 +142,16 @@ impl<const MAX_DEVICES: usize> Kbd<MAX_DEVICES> {
         self.event.take()
     }
 
+    /// Set interval for idle reports
+    ///
+    /// If an idle interval is set, the keyboard will send out the current input report (i.e. pressed keys)
+    /// regularly, even when no change to the pressed keys occurs.
+    ///
+    /// Setting the interval to `0` disables idle reports. If they are disabled, input reports are only
+    /// received when a key is pressed or released.
+    ///
+    /// The USB HID specification recommends a default rate of 500ms for keyboards.
+    ///
     pub fn set_idle<B: HostBus>(&mut self, dev_addr: DeviceAddress, value: u16, host: &mut UsbHost<B>) {
         if let Some(device) = self.find_configured_device(dev_addr) {
             host.control_out(
@@ -144,6 +169,30 @@ impl<const MAX_DEVICES: usize> Kbd<MAX_DEVICES> {
                 &[],
             );
         }
+    }
+
+    pub fn set_led<B: HostBus>(&mut self, dev_addr: DeviceAddress, led: KbdLed, on: bool, host: &mut UsbHost<B>) {
+        if let Some(device) = self.find_configured_device(dev_addr) {
+            if on {
+                device.output_report |= 1 << (led as u8);
+            } else {
+                device.output_report &= !(1 << (led as u8));
+            }
+            host.control_out(
+                Some(dev_addr),
+                Some(device.control_pipe),
+                SetupPacket::new(
+                    UsbDirection::Out,
+                    RequestType::Class,
+                    Recipient::Interface,
+                    0x09, // SetReport,
+                    2 << 8, // 2 means "output" report
+                    0,
+                    1,
+                ),
+                &[device.output_report],
+            );
+        }        
     }
 
     fn find_device_slot(&mut self, device_address: DeviceAddress) -> Option<&mut Option<KbdDevice>> {
@@ -198,18 +247,14 @@ impl<B: HostBus> Driver<B> for Kbd {
     }
 
     fn detached(&mut self, device_address: DeviceAddress) {
-        defmt::info!("DRIVER DETACH {}", device_address);
         if let Some(slot) = self.find_device_slot(device_address) {
-            defmt::info!("A");
             if let Some(KbdDevice { inner: KbdDeviceInner::Configured(_), .. }) = slot.take() {
-                defmt::info!("B");
                 self.event = Some(KbdEvent::DeviceRemoved(device_address));
             }
         }
     }
 
     fn descriptor(&mut self, device_address: DeviceAddress, descriptor_type: u8, data: &[u8]) {
-        defmt::info!("Got desc {}, {}, {} bytes", device_address, descriptor_type, data.len());
         if let Some(device) = self.find_pending_device(device_address) {
             if descriptor_type == DescriptorType::Configuration as u8 {
                 if device.interface.is_none() { // we only care about new configurations if we haven't already found an interface that we can handle
@@ -225,7 +270,6 @@ impl<B: HostBus> Driver<B> for Kbd {
                     if interface.interface_class == 0x03 && // HID
                         interface.interface_sub_class == 0x01 && // boot interface
                         interface.interface_protocol  == 0x01 { // keyboard
-                            defmt::info!("Matching interface!");
                             device.interface = Some(interface.interface_number);
                         }
                 }
@@ -233,7 +277,6 @@ impl<B: HostBus> Driver<B> for Kbd {
                 if device.interface.is_some() && device.endpoint.is_none() {
                     if let Ok((_, endpoint)) = crate::descriptor::parse::endpoint_descriptor(data) {
                         if endpoint.address.direction() == UsbDirection::In && endpoint.attributes.transfer_type() == TransferType::Interrupt {
-                            defmt::info!("Matching endpoint!");
                             device.endpoint = Some(endpoint.address.number());
                             device.interval = Some(endpoint.interval);
                         }
@@ -277,7 +320,7 @@ impl<B: HostBus> Driver<B> for Kbd {
                             interface,
                             control_pipe,
                             interrupt_pipe,
-                            input_report: [0; 8],
+                            output_report: 0,
                         }),
                         _ => None,
                     }

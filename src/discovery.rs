@@ -18,6 +18,8 @@ pub enum DiscoveryState {
     ConfigDesc(u8, u8),
     // finished discovery.
     Done,
+    // failed to parse one of the descriptors
+    ParseError,
 }
 
 pub fn start_discovery<B: HostBus>(dev_addr: DeviceAddress, host: &mut UsbHost<B>) -> DiscoveryState {
@@ -25,17 +27,23 @@ pub fn start_discovery<B: HostBus>(dev_addr: DeviceAddress, host: &mut UsbHost<B
     DiscoveryState::DeviceDesc
 }
 
-pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, state: DiscoveryState, driver: &mut dyn Driver<B>, host: &mut UsbHost<B>) -> DiscoveryState {
+pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, state: DiscoveryState, drivers: &mut [&mut dyn Driver<B>], host: &mut UsbHost<B>) -> DiscoveryState {
     match state {
         DiscoveryState::DeviceDesc => {
             match event {
                 Event::ControlInData(_, length) => {
                     let data = unsafe { host.bus.control_buffer(length as usize) };
-                    let (_, descriptor) = descriptor::parse::any_descriptor(data).unwrap();
-                    driver.descriptor(dev_addr, descriptor.descriptor_type, descriptor.data);
-                    let (_, device_descriptor) = descriptor::parse::device_descriptor(descriptor.data).unwrap();
+                    let Ok((_, descriptor)) = descriptor::parse::any_descriptor(data) else {
+                        return DiscoveryState::ParseError
+                    };
+                    for driver in drivers {
+                        driver.descriptor(dev_addr, descriptor.descriptor_type, descriptor.data);
+                    }
+                    let Ok((_, device_descriptor)) = descriptor::parse::device_descriptor(descriptor.data) else {
+                        return DiscoveryState::ParseError
+                    };
 
-                    host.get_descriptor(Some(dev_addr), Recipient::Device, DescriptorType::Configuration, 0, 9).unwrap();
+                    _ = host.get_descriptor(Some(dev_addr), Recipient::Device, DescriptorType::Configuration, 0, 9);
                     DiscoveryState::ConfigDescLen(0, device_descriptor.num_configurations)
                 }
                 _ => state
@@ -45,9 +53,13 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
             match event {
                 Event::ControlInData(_, length) => {
                     let data = unsafe { host.bus.control_buffer(length as usize) };
-                    let (_, descriptor) = descriptor::parse::any_descriptor(data).unwrap();
-                    let (_, total_length) = descriptor::parse::configuration_descriptor_length(descriptor.data).unwrap();
-                    host.get_descriptor(Some(dev_addr), Recipient::Device, DescriptorType::Configuration, n, total_length).unwrap();
+                    let Ok((_, descriptor)) = descriptor::parse::any_descriptor(data) else {
+                        return DiscoveryState::ParseError
+                    };
+                    let Ok((_, total_length)) = descriptor::parse::configuration_descriptor_length(descriptor.data) else {
+                        return DiscoveryState::ParseError
+                    };
+                    _ = host.get_descriptor(Some(dev_addr), Recipient::Device, DescriptorType::Configuration, n, total_length);
                     DiscoveryState::ConfigDesc(n, m)
                 }
                 _ => state
@@ -58,8 +70,12 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                 Event::ControlInData(_, length) => {
                     let mut data = unsafe { host.bus.control_buffer(length as usize) };
                     loop {
-                        let (rest, descriptor) = descriptor::parse::any_descriptor(data).unwrap();
-                        driver.descriptor(dev_addr, descriptor.descriptor_type, descriptor.data);
+                        let Ok((rest, descriptor)) = descriptor::parse::any_descriptor(data) else {
+                            return DiscoveryState::ParseError
+                        };
+                        for driver in &mut *drivers {
+                            driver.descriptor(dev_addr, descriptor.descriptor_type, descriptor.data);
+                        }
                         if rest.len() > 0 {
                             data = rest;
                         } else {
@@ -67,7 +83,7 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                         }
                     }
                     if (n + 1) < m {
-                        host.get_descriptor(Some(dev_addr), Recipient::Device, DescriptorType::Configuration, n + 1, 9).unwrap();
+                        _ = host.get_descriptor(Some(dev_addr), Recipient::Device, DescriptorType::Configuration, n + 1, 9);
                         DiscoveryState::ConfigDesc(n + 1, m)
                     } else {
                         DiscoveryState::Done
@@ -76,6 +92,6 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                 _ => state
             }
         },
-        DiscoveryState::Done => unreachable!(),
+        DiscoveryState::Done | DiscoveryState::ParseError => unreachable!(),
     }
 }
