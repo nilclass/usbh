@@ -1,3 +1,10 @@
+//! Interface for host bus hardware
+//!
+//! In order to use `usbh` on a given device, there must be a [`bus::HostBus`] implementation.
+//!
+//! This interface is still evolving, as there is only one (partially complete) implementation so far.
+//!
+
 use crate::types::{ConnectionSpeed, SetupPacket, DeviceAddress, TransferType};
 use fugit::MillisDuration;
 use defmt::Format;
@@ -5,11 +12,25 @@ use usb_device::UsbDirection;
 
 pub trait HostBus {
     /// Reset the controller into it's initial state.
+    ///
+    /// This is called once as the UsbHost is initialized, and will be called again when [`crate::UsbHost::reset`] is called.
+    ///
+    /// It must do any necessary preparation needed to enable the hardware and put it into the appropriate mode to act as a host.
+    ///
+    /// It must also reset any internal state related to this HostBus interface to a default configuration.
+    ///
+    /// If applicable, this is also the point where all interrupts should be enabled that are necessary to generate the
+    /// appropriate [`Event`]s when `poll` is called.
+    ///
+    /// This method must *not* enable interrupts on start-of-frame. SOF-interrupts are separately controlled by [`HostBus::interrupt_on_sof`].
     fn reset_controller(&mut self);
 
     /// Reset the bus, but keep the controller initialized.
     ///
-    /// The goal here is that communication with the device is interrupted, and it will show up as `Attached` again.
+    /// Must cause a RESET condition on the bus.
+    ///
+    /// Must not disable any interrupts previously set up, but may suspend generating SOF / keep-alive packets, requiring the host to
+    /// call [`HostBus::enable_sof`] after the reset is complete.
     fn reset_bus(&mut self);
 
     /// Enable sending SOF (for full-speed) or keep-alive (for low-speed) packets
@@ -20,32 +41,54 @@ pub trait HostBus {
     /// Check if SOF packets are currently enabled
     fn sof_enabled(&self) -> bool;
 
-    /// Set device address and endpoint for future communication
+    /// Set device address, endpoint and transfer type for an upcoming transfer
     ///
     /// A `dev_addr` of `0` is represented as `None`.
+    ///
+    /// This method is always called before a transfer is initiated. It must have effect for all future transactions (`SETUP`, `DATA`, ...),
+    /// until `set_recipient` is called again.
     fn set_recipient(&mut self, dev_addr: Option<DeviceAddress>, endpoint: u8, transfer_type: TransferType);
 
     /// Write a SETUP packet to the bus
+    ///
+    /// Once the packet has been acknowledged by the device, a [`Event::TransComplete`] must be generated.
+    ///
+    /// This method must not modify the buffers used for DATA transfers.
+    /// In particular if [`prepare_data_out`] is called before [`write_setup`], as soon as [`Event::TransComplete`]
+    /// occurs, the data buffer must be in the prepared state, and ready for a [`write_data_out_prepared`] call.
     fn write_setup(&mut self, setup: SetupPacket);
 
-    /// Write a DATA IN packet to the bus, and receive `length`
+    /// Write a DATA IN packet to the bus, then receive `length` bytes
+    ///
+    /// Once all data has been received, a [`Event::TransComplete`] must be generated.
     fn write_data_in(&mut self, length: u16, pid: bool);
 
     /// Write a DATA OUT packet to the bus, after loading the given `data` into the output buffer
+    ///
+    /// Once all data has been sent, a [`Event::TransComplete`] must be generated.
     fn write_data_out(&mut self, data: &[u8]) {
         self.prepare_data_out(data);
         self.write_data_out_prepared();
     }
 
     /// Load the given `data` into the output buffer
+    ///
+    /// After this method was called, a [`write_data_out_prepared`] call should write this data.
+    ///
+    /// The prepared data should be overwritten by any future call to [`prepare_data_out`], [`write_data_in`] or [`write_data_out`].
+    ///
+    /// In other words: the data buffer can be shared by IN and OUT transfers, since there will only ever be one of them in progress at any time.
     fn prepare_data_out(&mut self, data: &[u8]);
 
     /// Write a DATA OUT packet to the bus, assuming the buffers were already prepared
+    ///
+    /// The data sent will have been passed to [`prepare_data_out`] before this call.
+    ///
+    /// Once all data has been sent, a [`Event::TransComplete`] must be generated.
     fn write_data_out_prepared(&mut self);
 
-    fn poll(&mut self) -> PollResult;
-
-    fn process_received_data<F: FnOnce(&[u8]) -> T, T>(&self, f: F) -> T;
+    /// Check if there is an event pending on the bus, if there is return it.
+    fn poll(&mut self) -> Option<Event>;
 
     unsafe fn control_buffer(&self, len: usize) -> &[u8];
 
@@ -68,11 +111,6 @@ pub trait HostBus {
     /// If the controller does not support SOF interrupts natively, they can be implemented
     /// with a platform-specific timer.
     fn interrupt_on_sof(&mut self, enable: bool);
-}
-
-pub struct PollResult {
-    pub event: Option<Event>,
-    pub poll_again_after: Option<MillisDuration<u8>>,
 }
 
 #[derive(Copy, Clone, Format, PartialEq)]
