@@ -92,7 +92,7 @@ pub mod descriptor;
 
 use bus::HostBus;
 use core::num::NonZeroU8;
-use defmt::{info, Format};
+use defmt::Format;
 use discovery::DiscoveryState;
 use enumeration::EnumerationState;
 use types::{DeviceAddress, SetupPacket, TransferType};
@@ -286,12 +286,12 @@ impl<B: HostBus> UsbHost<B> {
                     }
                 }
                 bus::Event::Resume => {
-                    info!("[UsbHost] Device resumed");
+                    // TODO: figure out if drivers need to see this event
                     Event::Resume
                 }
                 bus::Event::Stall => {
-                    info!("[UsbHost] Stall received!");
-                    // TODO: figure out if we should reset everything in case of a stall, or just ignore it until the device is unplugged
+                    // TODO: figure out if we should reset everything in case of a stall, or just ignore it until the device is unplugged.
+                    // Notifying the drivers and the application of this condition would also make sense.
                     Event::Stall
                 }
                 bus::Event::Error(error) => Event::BusError(error),

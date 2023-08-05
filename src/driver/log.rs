@@ -109,10 +109,10 @@ impl<B: HostBus> Driver<B> for LogDriver {
                 }
                 _ => {
                     info!(
-                        "[usbh LogDriver] Device {} sent descriptor of type {:#X} ({} bytes)",
+                        "[usbh LogDriver] Device {} sent descriptor of type {:#X}: {}",
                         u8::from(dev_addr),
                         descriptor_type,
-                        data.len(),
+                        data,
                     )
                 }
             }
