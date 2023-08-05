@@ -60,7 +60,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                     if n > 0 {
                         EnumerationState::Delay0(n - 1)
                     } else {
-                        host.get_descriptor(None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 8);
+                        host.get_descriptor(None, None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 8);
                         debug!("[UsbHost enumeration] -> WaitDescriptor");
                         EnumerationState::WaitDescriptor
                     }

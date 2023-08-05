@@ -19,15 +19,26 @@ use crate::types::{Bcd16, TransferType};
 use usb_device::UsbDirection;
 use defmt::Format;
 
+/// [`descriptor_type`](Descriptor::descriptor_type) identifying a [`DeviceDescriptor`]
 pub const TYPE_DEVICE: u8 = 1;
+/// [`descriptor_type`](Descriptor::descriptor_type) identifying a [`ConfigurationDescriptor`]
 pub const TYPE_CONFIGURATION: u8 = 2;
+/// [`descriptor_type`](Descriptor::descriptor_type) identifying a `StringDescriptor` (not yet implemented)
 pub const TYPE_STRING: u8 = 3;
+/// [`descriptor_type`](Descriptor::descriptor_type) identifying an [`InterfaceDescriptor`]
 pub const TYPE_INTERFACE: u8 = 4;
+/// [`descriptor_type`](Descriptor::descriptor_type) identifying an [`EndpointDescriptor`]
 pub const TYPE_ENDPOINT: u8 = 5;
 
+/// Outer framing of a descriptor
 pub struct Descriptor<'a> {
+    /// Total length of the descriptor, including this length byte itself and the `descriptor_type` byte
     pub length: u8,
+    /// Type of descriptor. If this is a standard descriptor, it corresponds to one of the `TYPE_*` constants,
+    /// otherwise it is class or vendor specific.
     pub descriptor_type: u8,
+    /// Remaining data of the descriptor. Usually `length - 2` bytes long, except the descriptor may be truncated
+    /// if less data was requested, or the data did not fully fit into the control buffer.
     pub data: &'a [u8],
 }
 
@@ -288,12 +299,17 @@ pub mod parse {
 
     use super::*;
 
+    /// Parse outer framing of a descriptor
+    ///
+    /// The resulting `data` within the descriptor can then be parsed with one of the other functions below,
+    /// depending on the `type`.
     pub fn any_descriptor(input: &[u8]) -> IResult<&[u8], Descriptor<'_>> {
         let (input, (length, descriptor_type)) = tuple((u8, u8))(input)?;
         let (input, data) = take((length - 2) as usize)(input)?;
         Ok((input, Descriptor { length, descriptor_type, data }))
     }
 
+    /// Parse descriptor data for a device
     pub fn device_descriptor(input: &[u8]) -> IResult<&[u8], DeviceDescriptor> {
         map(
             tuple((bcd_16, u8, u8, u8, u8, le_u16, le_u16, bcd_16, u8, u8, u8, u8)),
@@ -309,6 +325,7 @@ pub mod parse {
         )(input)
     }
 
+    /// Parse descriptor data for a configuration
     pub fn configuration_descriptor(input: &[u8]) -> IResult<&[u8], ConfigurationDescriptor> {
         map(
             tuple((le_u16, u8, u8, u8, u8, u8)),
@@ -322,10 +339,12 @@ pub mod parse {
         )(input)
     }
 
+    /// Parse only the `total_length` from a (partial) configuration descriptor
     pub fn configuration_descriptor_length(input: &[u8]) -> IResult<&[u8], u16> {
         le_u16(input)
     }
 
+    /// Parse descriptor data for an interface
     pub fn interface_descriptor(input: &[u8]) -> IResult<&[u8], InterfaceDescriptor> {
         map(
             tuple((u8, u8, u8, u8, u8, u8, u8)),
@@ -339,6 +358,7 @@ pub mod parse {
         )(input)
     }
 
+    /// Parse descriptor data for an endpoint
     pub fn endpoint_descriptor(input: &[u8]) -> IResult<&[u8], EndpointDescriptor> {
         map(
             tuple((u8, u8, le_u16, u8)),

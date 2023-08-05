@@ -111,7 +111,7 @@ pub struct SetupPacket {
 impl SetupPacket {
     /// Construct a setup packet for for a control transfer
     ///
-    /// Setup packets are then passed to the [`UsbHost::control_in`] / [`UsbHost::control_out`] methods.
+    /// Setup packets are then passed to the [`control_in`](crate::UsbHost::control_in) / [`control_out`](crate::UsbHost::control_out) methods.
     ///
     /// Usually this is done by drivers, not application code.
     ///

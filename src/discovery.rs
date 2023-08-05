@@ -22,7 +22,7 @@ pub enum DiscoveryState {
 /// Begin discovery, by requesting the device descriptor
 pub fn start_discovery<B: HostBus>(dev_addr: DeviceAddress, host: &mut UsbHost<B>) -> DiscoveryState {
     // Unwrap safety: it is up to the UsbHost to start discovery only when no other transfer is in progress.
-    host.get_descriptor(Some(dev_addr), Recipient::Device, descriptor::TYPE_DEVICE, 0, 18).ok().unwrap();
+    host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 18).ok().unwrap();
     DiscoveryState::DeviceDesc
 }
 
@@ -43,7 +43,7 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                     };
 
                     // Unwrap safety: when a `Control*` event is emitted, the host is idle and a transfer can be started
-                    host.get_descriptor(Some(dev_addr), Recipient::Device, descriptor::TYPE_CONFIGURATION, 0, 9).ok().unwrap();
+                    host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_CONFIGURATION, 0, 9).ok().unwrap();
                     DiscoveryState::ConfigDescLen(0, device_descriptor.num_configurations)
                 }
                 _ => state
@@ -60,7 +60,7 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                         return DiscoveryState::ParseError
                     };
                     // Unwrap safety: when a `Control*` event is emitted, the host is idle and a transfer can be started
-                    host.get_descriptor(Some(dev_addr), Recipient::Device, descriptor::TYPE_CONFIGURATION, n, total_length).ok().unwrap();
+                    host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_CONFIGURATION, n, total_length).ok().unwrap();
                     DiscoveryState::ConfigDesc(n, m)
                 }
                 _ => state
@@ -85,7 +85,7 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                     }
                     if (n + 1) < m {
                         // Unwrap safety: when a `Control*` event is emitted, the host is idle and a transfer can be started
-                        host.get_descriptor(Some(dev_addr), Recipient::Device, descriptor::TYPE_CONFIGURATION, n + 1, 9).ok().unwrap();
+                        host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_CONFIGURATION, n + 1, 9).ok().unwrap();
                         DiscoveryState::ConfigDesc(n + 1, m)
                     } else {
                         // NOTE: do not start a transfer here, the UsbHost code expects the bus to stay idle.
