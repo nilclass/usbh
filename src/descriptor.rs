@@ -1,3 +1,20 @@
+//! Types for (standard) descriptors
+//!
+//! This module contains types to represent various USB descriptors.
+//!
+//! The [`parse`] submodule contains functions for parsing raw descriptors into these structures.
+//!
+//! All descriptors have a common framing: the first two bytes contain the descriptor **length** and **type** respectively.
+//! This framing is represented by the [`Descriptor`] type.
+//!
+//! To turn raw descriptor data into a [`Descriptor`] use the [`parse::any_descriptor`] function.
+//!
+//! Such a descriptor can then be interpreted further, by examining the [`Descriptor::descriptor_type`]:
+//! - If the type matches one of the 5 standard types ([`TYPE_DEVICE`], [`TYPE_CONFIGURATION`], [`TYPE_STRING`], [`TYPE_INTERFACE`], [`TYPE_ENDPOINT`]),
+//!   then it's `data` can further be parsed by the respective methods in the [`parse`] module.
+//! - Otherwise it's up to the driver to interpret the descriptor.
+//!
+
 use crate::types::{Bcd16, TransferType};
 use usb_device::UsbDirection;
 use defmt::Format;
@@ -264,7 +281,7 @@ pub enum UsageType {
 
 pub mod parse {
     use nom::IResult;
-    use nom::combinator::map;
+    use nom::combinator::{map, verify};
     use nom::sequence::tuple;
     use nom::bytes::streaming::take;
     use nom::number::streaming::{u8, le_u16};
@@ -336,8 +353,11 @@ pub mod parse {
         )(input)
     }
 
+    /// Parses a 16-bit binary coded decimal value
+    ///
+    /// Succeeds only if the data is indeed a valid value. This requires all four nibbles (i.e. half-bytes) to be in the 0-9 range.
     pub fn bcd_16(input: &[u8]) -> IResult<&[u8], Bcd16> {
-        map(le_u16, Bcd16)(input)
+        map(verify(le_u16, |value| Bcd16::is_valid(*value)), Bcd16)(input)
     }
 
     #[cfg(test)]
@@ -345,12 +365,35 @@ pub mod parse {
         use super::*;
 
         #[test]
+        fn test_any_descriptor() {
+            let data = [8, 7, 6, 5, 4, 3, 2, 1, 0];
+            let (rest, desc) = any_descriptor(&data).unwrap();
+            assert_eq!(desc.length, 8);
+            assert_eq!(desc.descriptor_type, 7);
+            assert_eq!(desc.data, &[6, 5, 4, 3, 2, 1]);
+            assert_eq!(rest, &[0]);
+        }
+
+        #[test]
         fn test_bcd_16() {
             let (_, Bcd16(bcd)) = bcd_16(&[0x10, 0x02]).unwrap();
             assert_eq!(bcd, 0x0210);
-        }
 
-        // #[test]
-        // fn test_device_descriptor(
+            assert!(bcd_16(&[0x00, 0x01]).is_ok());
+            assert!(bcd_16(&[0x00, 0x02]).is_ok());
+            assert!(bcd_16(&[0x00, 0x03]).is_ok());
+            assert!(bcd_16(&[0x00, 0x04]).is_ok());
+            assert!(bcd_16(&[0x00, 0x05]).is_ok());
+            assert!(bcd_16(&[0x00, 0x06]).is_ok());
+            assert!(bcd_16(&[0x00, 0x07]).is_ok());
+            assert!(bcd_16(&[0x00, 0x08]).is_ok());
+            assert!(bcd_16(&[0x00, 0x09]).is_ok());
+            assert!(bcd_16(&[0x00, 0x0A]).is_err());
+            assert!(bcd_16(&[0x00, 0x0B]).is_err());
+            assert!(bcd_16(&[0x00, 0x0C]).is_err());
+            assert!(bcd_16(&[0x00, 0x0D]).is_err());
+            assert!(bcd_16(&[0x00, 0x0E]).is_err());
+            assert!(bcd_16(&[0x00, 0x0F]).is_err());
+        }
     }
 }

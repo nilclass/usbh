@@ -1,11 +1,12 @@
+//!
+
+
 #![no_std]
+
 
 pub mod types;
 pub mod bus;
 pub mod driver;
-
-//pub mod drivers;
-//pub mod pipe;
 
 mod transfer;
 mod enumeration;
@@ -15,26 +16,34 @@ pub mod descriptor;
 
 use core::num::NonZeroU8;
 use bus::HostBus;
-use types::{DeviceAddress, DescriptorType, SetupPacket, TransferType};
+use types::{DeviceAddress, SetupPacket, TransferType};
 use enumeration::EnumerationState;
 use discovery::DiscoveryState;
 use usb_device::{UsbDirection, control::{Recipient, RequestType, Request}};
-use defmt::{info, debug, Format};
+use defmt::{info, Format};
 
+/// Maximum number of pipes that the host supports.
 const MAX_PIPES: usize = 32;
 
 #[derive(Copy, Clone)]
 enum State {
+    // Enumeration phase: starts in WaitForDevice state, ends with an address being assigned
     Enumeration(EnumerationState),
+    // Discovery phase: starts with an assigned address, ends with a configuration being chosen
     Discovery(DeviceAddress, DiscoveryState),
+    // Configuration phase: put the device into the chosen configuration
     Configuring(DeviceAddress, u8),
+    // 
     Configured(DeviceAddress, u8),
-    // No driver is interested.
+    // No driver is interested, or the device misbehaved during one of the previous phases
     Dormant(DeviceAddress),
 }
 
-#[derive(Debug)]
-pub struct WouldBlock;
+#[derive(Copy, Clone, PartialEq)]
+pub enum ControlError {
+    WouldBlock,
+    InvalidPipe,
+}
 
 #[derive(Copy, Clone, Format)]
 pub enum Event {
@@ -54,7 +63,7 @@ pub enum Event {
 pub enum PollResult {
     /// There is no device attached. It does not make sense to do anything else with the UsbHost instance, until a device was attached.
     NoDevice,
-    /// Bus is currently busy talking to a device. Calling any transfer methods on the device will return a `WouldBlock` error.
+    /// Bus is currently busy talking to a device. Calling any transfer methods on the device will return a [`ControlError::WouldBlock`] error.
     Busy,
     /// A device is attached and the bus is available. The caller can use the UsbHost instance to start a transfer or configure an interrupt.
     Idle,
@@ -107,6 +116,13 @@ impl<B: HostBus> UsbHost<B> {
         self.pipes.iter_mut().enumerate().find(|(_, slot)| slot.is_none()).map(|(i, slot)| (PipeId(i as u8), slot))
     }
 
+    /// Create a pipe for control transfers
+    ///
+    /// This method is meant to be called by drivers.
+    ///
+    /// The returned `PipeId` can be used to initiate transfers by calling [`UsbHost::control_out`], [`UsbHost::control_in`] or one of their wrappers.
+    ///
+    /// Returns `None` if the maximum number of supported pipes has been reached.
     pub fn create_control_pipe(&mut self, dev_addr: DeviceAddress) -> Option<PipeId> {
         self.alloc_pipe().map(|(id, slot)| {
             slot.replace(Pipe::Control { dev_addr });
@@ -114,6 +130,17 @@ impl<B: HostBus> UsbHost<B> {
         })
     }
 
+    /// Create a pipe for interrupt transfers
+    ///
+    /// This method is meant to be called by drivers.
+    ///
+    /// Transfers on the interrupt pipe are always initiated by the host controller at the appropriate times.
+    ///
+    /// Drivers must implement the [`driver::Driver::completed_in`] / [`driver::Driver::completed_out`] callbacks to
+    /// consume / produce data for the pipe as needed. The returned `PipeId` will be passed to those callbacks for the
+    /// driver to be able to associate the calls with an individual pipe they created.
+    ///
+    /// Returns `None` if the maximum number of supported pipes has been reached.
     pub fn create_interrupt_pipe(&mut self, dev_addr: DeviceAddress, ep_number: u8, direction: UsbDirection, size: u16, interval: u8) -> Option<PipeId> {
         self.bus().create_interrupt_pipe(dev_addr, ep_number, direction, size, interval)
             .and_then(|(ptr, bus_ref)| {
@@ -124,6 +151,20 @@ impl<B: HostBus> UsbHost<B> {
             })
     }
 
+    /// Reset the entire host stack
+    ///
+    /// This resets the host controller (via [`bus::HostBus::reset_controller`]) and resets
+    /// all internal state of the UsbHost to their defaults.
+    ///
+    /// Any current transfer will never complete, and any pipes created will no longer be valid.
+    /// At the end of the reset, no device will be connected.
+    ///
+    /// Drivers must never call this method.
+    ///
+    /// NOTE: since the host does not keep track of any drivers, it cannot reset the drivers' internal state.
+    ///   It is up to application code to reset / re-initialize the drivers after resetting the host stack.
+    ///   Any `PipeId` or `DeviceAddress` held by the application or driver(s) must be considered invalid after a reset.
+    ///   Continuing to use them can lead to strange behavior, since after a reset, pipe and device addresses *will* be re-used.
     pub fn reset(&mut self) {
         self.bus.reset_controller();
         self.state = State::Enumeration(EnumerationState::WaitForDevice);
@@ -133,6 +174,8 @@ impl<B: HostBus> UsbHost<B> {
     }
 
     /// Returns the next unassigned address, and increments the counter
+    ///
+    /// If 
     fn next_address(&mut self) -> DeviceAddress {
         self.last_address = self.last_address.wrapping_add(1);
         if self.last_address == 0 {
@@ -141,21 +184,46 @@ impl<B: HostBus> UsbHost<B> {
         DeviceAddress(NonZeroU8::new(self.last_address).unwrap())
     }
 
-    fn control_in(&mut self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>, setup: SetupPacket, length: u16) -> Result<(), WouldBlock> {
+    /// Initiate an IN transfer on the control endpoint of the given device
+    ///
+    /// If a `pipe_id` is given, the driver that set up the pipe will be able to associate the [`driver::Driver::completed_control`]
+    /// call with this transfer.
+    /// Otherwise the transfer will not be reported to any drivers.
+    ///
+    /// The number of bytes transferred is determined by the `length` from the setup packet.
+    ///
+    /// If there is currently a transfer in progress, [`ControlError::WouldBlock`] is returned, and no attempt is made to initiate the transfer.
+    ///
+    /// This method is usually called by drivers, not by application code.
+    pub fn control_in(&mut self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>, setup: SetupPacket) -> Result<(), ControlError> {
+        self.validate_control_pipe(dev_addr, pipe_id)?;
         if self.active_transfer.is_some() {
-            return Err(WouldBlock)
+            return Err(ControlError::WouldBlock)
         }
 
-        self.active_transfer = Some((pipe_id, transfer::Transfer::new_control_in(length)));
+        self.active_transfer = Some((pipe_id, transfer::Transfer::new_control_in(setup.length)));
         self.bus.set_recipient(dev_addr, 0, TransferType::Control);
         self.bus.write_setup(setup);
 
         Ok(())
     }
 
-    fn control_out(&mut self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>, setup: SetupPacket, data: &[u8]) -> Result<(), WouldBlock> {
+    /// Initiate an OUT transfer on the control endpoint of the given device
+    ///
+    /// If a `pipe_id` is given, the driver that set up the pipe will be able to associate the [`driver::Driver::completed_control`]
+    /// call with this transfer.
+    /// Otherwise the transfer will not be reported to any drivers.
+    ///
+    /// The `length` of the `setup` packet MUST be equal to the size of the `data` slice.
+    ///
+    /// If there is currently a transfer in progress, [`ControlError::WouldBlock`] is returned, and no attempt is made to initiate the transfer.
+    ///
+    /// This method is usually called by drivers, not by application code.
+    pub fn control_out(&mut self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>, setup: SetupPacket, data: &[u8]) -> Result<(), ControlError> {
+        self.validate_control_pipe(dev_addr, pipe_id)?;
+
         if self.active_transfer.is_some() {
-            return Err(WouldBlock)
+            return Err(ControlError::WouldBlock)
         }
 
         self.active_transfer = Some((pipe_id, transfer::Transfer::new_control_out(data.len() as u16)));
@@ -166,8 +234,43 @@ impl<B: HostBus> UsbHost<B> {
         Ok(())
     }
 
-    pub fn get_descriptor(&mut self, dev_addr: Option<DeviceAddress>, recipient: Recipient, descriptor_type: DescriptorType, descriptor_index: u8, length: u16) -> Result<(), WouldBlock> {
-        defmt::info!("GetDescriptor {} {} {} {} {}", dev_addr, recipient, descriptor_type, descriptor_index, length);
+    fn validate_control_pipe(&self, dev_addr: Option<DeviceAddress>, pipe_id: Option<PipeId>) -> Result<(), ControlError> {
+        let is_valid = match (dev_addr, pipe_id) {
+            (None, None) | (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (Some(given_dev_addr), Some(pipe_id)) => {
+                // Index safety: a PipeId that is not in the 0..MAX_PIPES range (valid indices for self.pipes)
+                //   should not be produced and indicates a bug within UsbHost.
+                if let Some(Pipe::Control { dev_addr }) = self.pipes[pipe_id.0 as usize] {
+                    dev_addr == given_dev_addr
+                } else {
+                    false
+                }
+            }
+        };
+        if is_valid {
+            Ok(())
+        } else {
+            Err(ControlError::InvalidPipe)
+        }
+    }
+
+    /// Initiate a `Get_Descriptor` (0x06) control IN transfer
+    ///
+    /// This is a convenience wrapper around [`UsbHost::control_in`], for the `Get_Descriptor` standard request.
+    ///
+    /// The `descriptor_type` can be one of the `TYPE_*` constants defined in the [`descriptor`] module, but usally these
+    /// are already requested during the discovery phase.
+    ///
+    /// Thus usually this method will be used to request class- or vendor-specific descriptors.
+    pub fn get_descriptor(
+        &mut self,
+        dev_addr: Option<DeviceAddress>,
+        recipient: Recipient,
+        descriptor_type: u8,
+        descriptor_index: u8,
+        length: u16
+    ) -> Result<(), ControlError> {
         self.control_in(dev_addr, None, SetupPacket::new(
             UsbDirection::In,
             RequestType::Standard,
@@ -176,10 +279,15 @@ impl<B: HostBus> UsbHost<B> {
             ((descriptor_type as u16) << 8) | (descriptor_index as u16),
             0,
             length,
-        ), length)
+        ))
     }
 
-    pub fn set_address(&mut self, address: DeviceAddress) -> Result<(), WouldBlock> {
+    /// Initiate a `Set_Address` (0x05) control OUT transfer
+    ///
+    /// Private, since this is only used by the enumeration process.
+    ///
+    /// If drivers want to mess with the device address, they can do so manually.
+    fn set_address(&mut self, address: DeviceAddress) -> Result<(), ControlError> {
         self.control_out(None, None, SetupPacket::new(
             UsbDirection::Out,
             RequestType::Standard,
@@ -191,8 +299,16 @@ impl<B: HostBus> UsbHost<B> {
         ), &[])
     }
 
-    pub fn set_configuration(&mut self, address: DeviceAddress, configuration: u8) -> Result<(), WouldBlock> {
-        debug!("[UsbHost:{}] SetConfiguration({})", address, configuration);
+    /// Initiate a `Set_Configuration` (0x09) control OUT transfer
+    ///
+    /// This is a convenience wrapper around [`UsbHost::control_out`] for the `Set_Configuration` standard request.
+    ///
+    /// Normally this does not need to be called manually. Instead the configuration is selected by the usb host during the discovery phase,
+    /// depending on the drivers.
+    ///
+    /// Changing the configuration after the discovery phase is not supported yet by the driver interface. While it will probably work, make sure
+    /// your drivers are aware of it and can handle this situation.
+    pub fn set_configuration(&mut self, address: DeviceAddress, configuration: u8) -> Result<(), ControlError> {
         self.control_out(Some(address), None, SetupPacket::new(
             UsbDirection::Out,
             RequestType::Standard,
@@ -212,13 +328,12 @@ impl<B: HostBus> UsbHost<B> {
     ///
     /// If the host implementation has an interrupt that fires on USB activity, then calling it once in that interrupt handler is enough.
     /// Otherwise make sure to call it at least once per millisecond.
+    ///
+    /// The given list of drivers must be the same on every call to `poll`, otherwise drivers will likely not function as intended.
+    ///
+    /// 
     pub fn poll(&mut self, drivers: &mut [&mut dyn driver::Driver<B>]) -> PollResult {
-        let bus_result = self.bus.poll();
-
-        let event = if let Some(event) = bus_result.event {
-            if event != bus::Event::Sof {
-                //debug!("[UsbHost] Bus Event {}", event);
-            }
+        let event = if let Some(event) = self.bus.poll() {
             match event {
                 bus::Event::Attached(speed) => Event::Attached(speed),
                 bus::Event::Detached => Event::Detached,
@@ -254,7 +369,6 @@ impl<B: HostBus> UsbHost<B> {
                 bus::Event::Sof => Event::Sof,
             }
         } else {
-            info!("??");
             Event::None
         };
 
@@ -262,7 +376,6 @@ impl<B: HostBus> UsbHost<B> {
             State::Enumeration(enumeration_state) => {
                 match enumeration::process_enumeration(event, *enumeration_state, self) {
                     EnumerationState::Assigned(speed, dev_addr) => {
-                        info!("[UsbHost] Assigned address {} (speed: {})", dev_addr, speed);
                         for driver in drivers {
                             driver.attached(dev_addr, speed);
                         }
@@ -280,14 +393,18 @@ impl<B: HostBus> UsbHost<B> {
                 match discovery::process_discovery(event, dev_addr, *discovery_state, drivers, self) {
                     DiscoveryState::Done => {
                         let mut chosen_config = None;
+                        // Ask all the drivers to choose a configuration
                         for driver in drivers {
                             if let Some(config) = driver.configure(dev_addr) {
+                                // first driver to choose one wins...
                                 chosen_config = Some(config);
+                                // ...drivers later in the list don't get a say.
                                 break;
                             }
                         }
                         if let Some(config) = chosen_config {
-                            self.set_configuration(dev_addr, config);
+                            // Unwrap safety: when reaching `Done` state, the discovery phase leaves the bu sidle.
+                            self.set_configuration(dev_addr, config).ok().unwrap();
                             self.state = State::Configuring(dev_addr, config);
                         } else {
                             self.state = State::Dormant(dev_addr);

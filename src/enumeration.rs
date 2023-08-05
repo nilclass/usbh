@@ -1,10 +1,7 @@
-use crate::types::{
-    DeviceAddress,
-    DescriptorType,
-};
 use crate::bus::HostBus;
 use crate::{UsbHost, Event};
-use crate::types::ConnectionSpeed;
+use crate::types::{DeviceAddress, ConnectionSpeed};
+use crate::descriptor;
 use usb_device::control::Recipient;
 use defmt::{debug, Format};
 
@@ -27,16 +24,6 @@ pub enum EnumerationState {
     /// Device now has an address assigned, enumeration is done.
     Assigned(ConnectionSpeed, DeviceAddress),
 }
-
-// impl EnumerationState {
-//     pub(crate) fn delay(&self) -> Option<fugit::MillisDurationU32> {
-//         match self {
-//             EnumerationState::Delay0 => Some(fugit::MillisDurationU32::millis(10)),
-//             EnumerationState::Delay1 => Some(fugit::MillisDurationU32::millis(10)),
-//             _ => None,
-//         }
-//     }
-// }
 
 const RESET_0_DELAY: u8 = 10;
 const RESET_1_DELAY: u8 = 10;
@@ -73,7 +60,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                     if n > 0 {
                         EnumerationState::Delay0(n - 1)
                     } else {
-                        host.get_descriptor(None, Recipient::Device, DescriptorType::Device, 0, 8);
+                        host.get_descriptor(None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 8);
                         debug!("[UsbHost enumeration] -> WaitDescriptor");
                         EnumerationState::WaitDescriptor
                     }

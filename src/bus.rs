@@ -1,12 +1,11 @@
 //! Interface for host bus hardware
 //!
-//! In order to use `usbh` on a given device, there must be a [`bus::HostBus`] implementation.
+//! In order to use `usbh` on a given device, there must be a [`HostBus`] implementation specific to that device.
 //!
 //! This interface is still evolving, as there is only one (partially complete) implementation so far.
 //!
 
 use crate::types::{ConnectionSpeed, SetupPacket, DeviceAddress, TransferType};
-use fugit::MillisDuration;
 use defmt::Format;
 use usb_device::UsbDirection;
 
@@ -54,8 +53,8 @@ pub trait HostBus {
     /// Once the packet has been acknowledged by the device, a [`Event::TransComplete`] must be generated.
     ///
     /// This method must not modify the buffers used for DATA transfers.
-    /// In particular if [`prepare_data_out`] is called before [`write_setup`], as soon as [`Event::TransComplete`]
-    /// occurs, the data buffer must be in the prepared state, and ready for a [`write_data_out_prepared`] call.
+    /// In particular if [`HostBus::prepare_data_out`] is called before [`HostBus::write_setup`], as soon as [`Event::TransComplete`]
+    /// occurs, the data buffer must be in the prepared state, and ready for a [`HostBus::write_data_out_prepared`] call.
     fn write_setup(&mut self, setup: SetupPacket);
 
     /// Write a DATA IN packet to the bus, then receive `length` bytes
@@ -66,6 +65,8 @@ pub trait HostBus {
     /// Write a DATA OUT packet to the bus, after loading the given `data` into the output buffer
     ///
     /// Once all data has been sent, a [`Event::TransComplete`] must be generated.
+    ///
+    /// The default implementation is a wrapper around [`HostBus::prepare_data_out`] followed by [`HostBus::write_data_out_prepared`].
     fn write_data_out(&mut self, data: &[u8]) {
         self.prepare_data_out(data);
         self.write_data_out_prepared();
@@ -73,21 +74,23 @@ pub trait HostBus {
 
     /// Load the given `data` into the output buffer
     ///
-    /// After this method was called, a [`write_data_out_prepared`] call should write this data.
+    /// After this method was called, a [`HostBus::write_data_out_prepared`] call should write this data.
     ///
-    /// The prepared data should be overwritten by any future call to [`prepare_data_out`], [`write_data_in`] or [`write_data_out`].
+    /// The prepared data may be overwritten by any future call to [`HostBus::prepare_data_out`], [`HostBus::write_data_in`] or [`HostBus::write_data_out`].
     ///
     /// In other words: the data buffer can be shared by IN and OUT transfers, since there will only ever be one of them in progress at any time.
     fn prepare_data_out(&mut self, data: &[u8]);
 
     /// Write a DATA OUT packet to the bus, assuming the buffers were already prepared
     ///
-    /// The data sent will have been passed to [`prepare_data_out`] before this call.
+    /// The data sent will have been passed to [`HostBus::prepare_data_out`] before this call.
     ///
     /// Once all data has been sent, a [`Event::TransComplete`] must be generated.
     fn write_data_out_prepared(&mut self);
 
     /// Check if there is an event pending on the bus, if there is return it.
+    ///
+    /// This will be called whenever application code calls [`crate::UsbHost::poll`].
     fn poll(&mut self) -> Option<Event>;
 
     unsafe fn control_buffer(&self, len: usize) -> &[u8];

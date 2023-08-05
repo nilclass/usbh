@@ -40,9 +40,9 @@
 //! 
 //! ### Control transfers
 //! 
-//! To initiate a control transfer, the driver must have created a control pipe ([`UsbHost::create_control_pipe`]).
+//! To initiate a control transfer, the driver must have created a control pipe ([`crate::UsbHost::create_control_pipe`]).
 //! 
-//! That pipe can then be passed to [`UsbHost::control_in`] or [`UsbHost::control_out`], to initiate a transfer.
+//! That pipe can then be passed to [`crate::UsbHost::control_in`] or [`crate::UsbHost::control_out`], to initiate a transfer.
 //! 
 //! Example:
 //! ```ignore
@@ -124,7 +124,7 @@ pub trait Driver<B: HostBus> {
     /// The host is asking the driver to configure the device.
     ///
     /// If the driver can handle one of the configurations of the device (based on the descriptor),
-    /// it should return that configuration's value ([`usbh::descriptor::ConfigurationDescriptor::value`]).
+    /// it should return that configuration's value ([`crate::descriptor::ConfigurationDescriptor::value`]).
     ///
     /// Otherwise it should return None.
     ///
