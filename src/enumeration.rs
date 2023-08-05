@@ -60,7 +60,8 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                     if n > 0 {
                         EnumerationState::Delay0(n - 1)
                     } else {
-                        host.get_descriptor(None, None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 8);
+                        // Unwrap safety: no transfers are in progress during enumeration
+                        host.get_descriptor(None, None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 8).ok().unwrap();
                         debug!("[UsbHost enumeration] -> WaitDescriptor");
                         EnumerationState::WaitDescriptor
                     }
@@ -105,7 +106,8 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                         EnumerationState::Delay1(speed, n - 1)
                     } else {
                         let address = host.next_address();
-                        host.set_address(address);
+                        // Unwrap safety: no transfers are in progress, since this is the first transfer after a reset.
+                        host.set_address(address).ok().unwrap();
                         debug!("[UsbHost enumeration] -> WaitSetAddress");
                         EnumerationState::WaitSetAddress(speed, address)
                     }
