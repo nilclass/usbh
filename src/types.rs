@@ -3,7 +3,10 @@
 
 use core::num::NonZeroU8;
 use defmt::Format;
-use usb_device::{UsbDirection, control::{Recipient, RequestType}};
+use usb_device::{
+    control::{Recipient, RequestType},
+    UsbDirection,
+};
 
 /// An address that was assigned to a device by the host.
 ///
@@ -47,17 +50,18 @@ impl Bcd16 {
     }
 
     pub(crate) fn is_valid(value: u16) -> bool {
-        (value >> 12 & 0xF) < 10 &&
-        (value >> 8 & 0xF) < 10 &&
-        (value >> 4 & 0xF) < 10 &&
-        (value & 0xF) < 10
+        (value >> 12 & 0xF) < 10
+            && (value >> 8 & 0xF) < 10
+            && (value >> 4 & 0xF) < 10
+            && (value & 0xF) < 10
     }
 }
 
 impl Format for Bcd16 {
     fn format(&self, fmt: defmt::Formatter) {
         defmt::write!(
-            fmt, "{}{}{}{}",
+            fmt,
+            "{}{}{}{}",
             (self.0 >> 12) & 0xF,
             (self.0 >> 8) & 0xF,
             (self.0 >> 4) & 0xF,
@@ -77,10 +81,14 @@ pub enum ConnectionSpeed {
 
 impl Format for ConnectionSpeed {
     fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "{}", match self {
-            ConnectionSpeed::Low => "low",
-            ConnectionSpeed::Full => "full",
-        })
+        defmt::write!(
+            fmt,
+            "{}",
+            match self {
+                ConnectionSpeed::Low => "low",
+                ConnectionSpeed::Full => "full",
+            }
+        )
     }
 }
 
@@ -127,7 +135,15 @@ impl SetupPacket {
     /// - `length`: length in bytes that will be transferred in the subsequent data stage. When calling `control_out` this must be equal to the size of the
     ///   slice that is passed in as `data`.
     ///
-    pub fn new(direction: UsbDirection, request_type: RequestType, recipient: Recipient, request: u8, value: u16, index: u16, length: u16) -> Self {
+    pub fn new(
+        direction: UsbDirection,
+        request_type: RequestType,
+        recipient: Recipient,
+        request: u8,
+        value: u16,
+        index: u16,
+        length: u16,
+    ) -> Self {
         Self {
             request_type: (recipient as u8) | ((request_type as u8) << 5) | (direction as u8),
             request,

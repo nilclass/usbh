@@ -40,41 +40,60 @@ impl Transfer {
 
     pub(crate) fn stage_complete<B: HostBus>(self, host: &mut UsbHost<B>) -> PollResult {
         match self {
-            Transfer { state: TransferState::Control(UsbDirection::In, control_state), length } => {
-                match control_state {
-                    ControlState::WaitSetup => {
-                        host.bus.write_data_in(length, true);
-                        PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::In, ControlState::WaitData), length })
-                    }
-                    ControlState::WaitData => {
-                        host.bus.write_data_out(&[]);
-                        PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::In, ControlState::WaitConfirm), length })
-                    }
-                    ControlState::WaitConfirm => {
-                        PollResult::ControlInComplete(length)
-                    },
+            Transfer {
+                state: TransferState::Control(UsbDirection::In, control_state),
+                length,
+            } => match control_state {
+                ControlState::WaitSetup => {
+                    host.bus.write_data_in(length, true);
+                    PollResult::Continue(Transfer {
+                        state: TransferState::Control(UsbDirection::In, ControlState::WaitData),
+                        length,
+                    })
                 }
-            }
-            Transfer { state: TransferState::Control(UsbDirection::Out, control_state), length } => {
-                match control_state {
-                    ControlState::WaitSetup => {
-                        if length == 0 {
-                            host.bus.write_data_in(0, true);
-                            PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::Out, ControlState::WaitConfirm), length })
-                        } else {
-                            host.bus.write_data_out_prepared();
-                            PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::Out, ControlState::WaitData), length })
-                        }
-                    },
-                    ControlState::WaitData => {
+                ControlState::WaitData => {
+                    host.bus.write_data_out(&[]);
+                    PollResult::Continue(Transfer {
+                        state: TransferState::Control(UsbDirection::In, ControlState::WaitConfirm),
+                        length,
+                    })
+                }
+                ControlState::WaitConfirm => PollResult::ControlInComplete(length),
+            },
+            Transfer {
+                state: TransferState::Control(UsbDirection::Out, control_state),
+                length,
+            } => match control_state {
+                ControlState::WaitSetup => {
+                    if length == 0 {
                         host.bus.write_data_in(0, true);
-                        PollResult::Continue(Transfer { state: TransferState::Control(UsbDirection::Out, ControlState::WaitConfirm), length })
-                    },
-                    ControlState::WaitConfirm => {
-                        PollResult::ControlOutComplete
-                    },
+                        PollResult::Continue(Transfer {
+                            state: TransferState::Control(
+                                UsbDirection::Out,
+                                ControlState::WaitConfirm,
+                            ),
+                            length,
+                        })
+                    } else {
+                        host.bus.write_data_out_prepared();
+                        PollResult::Continue(Transfer {
+                            state: TransferState::Control(
+                                UsbDirection::Out,
+                                ControlState::WaitData,
+                            ),
+                            length,
+                        })
+                    }
                 }
-            }
+                ControlState::WaitData => {
+                    host.bus.write_data_in(0, true);
+                    PollResult::Continue(Transfer {
+                        state: TransferState::Control(UsbDirection::Out, ControlState::WaitConfirm),
+                        length,
+                    })
+                }
+                ControlState::WaitConfirm => PollResult::ControlOutComplete,
+            },
         }
     }
 }

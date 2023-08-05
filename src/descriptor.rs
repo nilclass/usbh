@@ -16,8 +16,8 @@
 //!
 
 use crate::types::{Bcd16, TransferType};
-use usb_device::UsbDirection;
 use defmt::Format;
+use usb_device::UsbDirection;
 
 /// [`descriptor_type`](Descriptor::descriptor_type) identifying a [`DeviceDescriptor`]
 pub const TYPE_DEVICE: u8 = 1;
@@ -291,11 +291,11 @@ pub enum UsageType {
 }
 
 pub mod parse {
-    use nom::IResult;
-    use nom::combinator::{map, verify};
-    use nom::sequence::tuple;
     use nom::bytes::streaming::take;
-    use nom::number::streaming::{u8, le_u16};
+    use nom::combinator::{map, verify};
+    use nom::number::streaming::{le_u16, u8};
+    use nom::sequence::tuple;
+    use nom::IResult;
 
     use super::*;
 
@@ -306,22 +306,51 @@ pub mod parse {
     pub fn any_descriptor(input: &[u8]) -> IResult<&[u8], Descriptor<'_>> {
         let (input, (length, descriptor_type)) = tuple((u8, u8))(input)?;
         let (input, data) = take((length - 2) as usize)(input)?;
-        Ok((input, Descriptor { length, descriptor_type, data }))
+        Ok((
+            input,
+            Descriptor {
+                length,
+                descriptor_type,
+                data,
+            },
+        ))
     }
 
     /// Parse descriptor data for a device
     pub fn device_descriptor(input: &[u8]) -> IResult<&[u8], DeviceDescriptor> {
         map(
-            tuple((bcd_16, u8, u8, u8, u8, le_u16, le_u16, bcd_16, u8, u8, u8, u8)),
-            |(usb_release, device_class, device_sub_class, device_protocol, max_packet_size,
-              id_vendor, id_product, device_release, manufacturer_index, product_index,
-              serial_number_index, num_configurations)| {
+            tuple((
+                bcd_16, u8, u8, u8, u8, le_u16, le_u16, bcd_16, u8, u8, u8, u8,
+            )),
+            |(
+                usb_release,
+                device_class,
+                device_sub_class,
+                device_protocol,
+                max_packet_size,
+                id_vendor,
+                id_product,
+                device_release,
+                manufacturer_index,
+                product_index,
+                serial_number_index,
+                num_configurations,
+            )| {
                 DeviceDescriptor {
-                    usb_release, device_class, device_sub_class, device_protocol, max_packet_size,
-                    id_vendor, id_product, device_release, manufacturer_index, product_index,
-                    serial_number_index, num_configurations,
+                    usb_release,
+                    device_class,
+                    device_sub_class,
+                    device_protocol,
+                    max_packet_size,
+                    id_vendor,
+                    id_product,
+                    device_release,
+                    manufacturer_index,
+                    product_index,
+                    serial_number_index,
+                    num_configurations,
                 }
-            }
+            },
         )(input)
     }
 
@@ -331,11 +360,14 @@ pub mod parse {
             tuple((le_u16, u8, u8, u8, u8, u8)),
             |(total_length, num_interfaces, value, index, attributes, max_power)| {
                 ConfigurationDescriptor {
-                    total_length, num_interfaces, value, index,
+                    total_length,
+                    num_interfaces,
+                    value,
+                    index,
                     attributes: ConfigurationAttributes(attributes),
                     max_power,
                 }
-            }
+            },
         )(input)
     }
 
@@ -348,13 +380,25 @@ pub mod parse {
     pub fn interface_descriptor(input: &[u8]) -> IResult<&[u8], InterfaceDescriptor> {
         map(
             tuple((u8, u8, u8, u8, u8, u8, u8)),
-            |(interface_number, alternate_setting, num_endpoints, interface_class, interface_sub_class,
-              interface_protocol, interface_index)| {
+            |(
+                interface_number,
+                alternate_setting,
+                num_endpoints,
+                interface_class,
+                interface_sub_class,
+                interface_protocol,
+                interface_index,
+            )| {
                 InterfaceDescriptor {
-                    interface_number, alternate_setting, num_endpoints, interface_class, interface_sub_class,
-                    interface_protocol, interface_index,
+                    interface_number,
+                    alternate_setting,
+                    num_endpoints,
+                    interface_class,
+                    interface_sub_class,
+                    interface_protocol,
+                    interface_index,
                 }
-            }
+            },
         )(input)
     }
 
@@ -362,14 +406,12 @@ pub mod parse {
     pub fn endpoint_descriptor(input: &[u8]) -> IResult<&[u8], EndpointDescriptor> {
         map(
             tuple((u8, u8, le_u16, u8)),
-            |(address, attributes, max_packet_size, interval)| {
-                EndpointDescriptor {
-                    address: EndpointAddress(address),
-                    attributes: EndpointAttributes(attributes),
-                    max_packet_size,
-                    interval,
-                }
-            }
+            |(address, attributes, max_packet_size, interval)| EndpointDescriptor {
+                address: EndpointAddress(address),
+                attributes: EndpointAttributes(attributes),
+                max_packet_size,
+                interval,
+            },
         )(input)
     }
 

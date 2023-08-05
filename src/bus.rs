@@ -5,7 +5,7 @@
 //! This interface is still evolving, as there is only one (partially complete) implementation so far.
 //!
 
-use crate::types::{ConnectionSpeed, SetupPacket, DeviceAddress, TransferType};
+use crate::types::{ConnectionSpeed, DeviceAddress, SetupPacket, TransferType};
 use defmt::Format;
 use usb_device::UsbDirection;
 
@@ -46,7 +46,12 @@ pub trait HostBus {
     ///
     /// This method is always called before a transfer is initiated. It must have effect for all future transactions (`SETUP`, `DATA`, ...),
     /// until `set_recipient` is called again.
-    fn set_recipient(&mut self, dev_addr: Option<DeviceAddress>, endpoint: u8, transfer_type: TransferType);
+    fn set_recipient(
+        &mut self,
+        dev_addr: Option<DeviceAddress>,
+        endpoint: u8,
+        transfer_type: TransferType,
+    );
 
     /// Write a SETUP packet to the bus
     ///
@@ -95,7 +100,14 @@ pub trait HostBus {
 
     unsafe fn control_buffer(&self, len: usize) -> &[u8];
 
-    fn create_interrupt_pipe(&mut self, device_address: DeviceAddress, endpoint_number: u8, direction: UsbDirection, size: u16, interval: u8) -> Option<(*mut u8, u8)>;
+    fn create_interrupt_pipe(
+        &mut self,
+        device_address: DeviceAddress,
+        endpoint_number: u8,
+        direction: UsbDirection,
+        size: u16,
+        interval: u8,
+    ) -> Option<(*mut u8, u8)>;
 
     fn release_interrupt_pipe(&mut self, pipe_ref: u8);
 

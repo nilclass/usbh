@@ -1,9 +1,9 @@
 use crate::bus::HostBus;
-use crate::{UsbHost, Event};
-use crate::types::{DeviceAddress, ConnectionSpeed};
 use crate::descriptor;
-use usb_device::control::Recipient;
+use crate::types::{ConnectionSpeed, DeviceAddress};
+use crate::{Event, UsbHost};
 use defmt::{debug, Format};
+use usb_device::control::Recipient;
 
 #[derive(Copy, Clone, Format)]
 pub enum EnumerationState {
@@ -28,7 +28,11 @@ pub enum EnumerationState {
 const RESET_0_DELAY: u8 = 10;
 const RESET_1_DELAY: u8 = 10;
 
-pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, host: &mut UsbHost<B>) -> EnumerationState {
+pub fn process_enumeration<B: HostBus>(
+    event: Event,
+    state: EnumerationState,
+    host: &mut UsbHost<B>,
+) -> EnumerationState {
     match state {
         EnumerationState::WaitForDevice => {
             match event {
@@ -36,23 +40,21 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                     debug!("[UsbHost enumeration] -> Reset0");
                     host.bus.reset_bus();
                     EnumerationState::Reset0
-                },
+                }
                 // TODO: handle timeouts
                 _ => state,
             }
         }
 
-        EnumerationState::Reset0 => {
-            match event {
-                Event::Attached(_) => {
-                    host.bus.enable_sof();
-                    debug!("[UsbHost enumeration] -> Delay0");
-                    host.bus.interrupt_on_sof(true);
-                    EnumerationState::Delay0(RESET_0_DELAY)
-                }
-                _ => state,
+        EnumerationState::Reset0 => match event {
+            Event::Attached(_) => {
+                host.bus.enable_sof();
+                debug!("[UsbHost enumeration] -> Delay0");
+                host.bus.interrupt_on_sof(true);
+                EnumerationState::Delay0(RESET_0_DELAY)
             }
-        }
+            _ => state,
+        },
 
         EnumerationState::Delay0(n) => {
             match event {
@@ -61,30 +63,37 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                         EnumerationState::Delay0(n - 1)
                     } else {
                         // Unwrap safety: no transfers are in progress during enumeration
-                        host.get_descriptor(None, None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 8).ok().unwrap();
+                        host.get_descriptor(
+                            None,
+                            None,
+                            Recipient::Device,
+                            descriptor::TYPE_DEVICE,
+                            0,
+                            8,
+                        )
+                        .ok()
+                        .unwrap();
                         debug!("[UsbHost enumeration] -> WaitDescriptor");
                         EnumerationState::WaitDescriptor
                     }
-                },
+                }
                 Event::Detached => EnumerationState::WaitForDevice,
                 _ => state,
             }
         }
 
-        EnumerationState::WaitDescriptor => {
-            match event {
-                Event::Detached => {
-                    debug!("[UsbHost enumeration] -> WaitForDevice");
-                    host.bus.interrupt_on_sof(false);
-                    EnumerationState::WaitForDevice
-                },
-                Event::ControlInData(_, _) => {
-                    debug!("[UsbHost enumeration] -> Reset1");
-                    host.bus.reset_bus();
-                    EnumerationState::Reset1
-                }
-                _ => state,
+        EnumerationState::WaitDescriptor => match event {
+            Event::Detached => {
+                debug!("[UsbHost enumeration] -> WaitForDevice");
+                host.bus.interrupt_on_sof(false);
+                EnumerationState::WaitForDevice
             }
+            Event::ControlInData(_, _) => {
+                debug!("[UsbHost enumeration] -> Reset1");
+                host.bus.reset_bus();
+                EnumerationState::Reset1
+            }
+            _ => state,
         },
 
         EnumerationState::Reset1 => {
@@ -97,7 +106,7 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                 // TODO: handle timeouts
                 _ => state,
             }
-        },
+        }
 
         EnumerationState::Delay1(speed, n) => {
             match event {
@@ -111,30 +120,28 @@ pub fn process_enumeration<B: HostBus>(event: Event, state: EnumerationState, ho
                         debug!("[UsbHost enumeration] -> WaitSetAddress");
                         EnumerationState::WaitSetAddress(speed, address)
                     }
-                },
+                }
                 Event::Detached => {
                     debug!("[UsbHost enumeration] -> WaitForDevice");
                     host.bus.interrupt_on_sof(false);
                     EnumerationState::WaitForDevice
-                },
+                }
                 _ => state,
             }
         }
 
-        EnumerationState::WaitSetAddress(speed, address) => {
-            match event {
-                Event::Detached => {
-                    debug!("[UsbHost enumeration] -> WaitForDevice");
-                    host.bus.interrupt_on_sof(false);
-                    EnumerationState::WaitForDevice
-                },
-                Event::ControlOutComplete(_) => {
-                    debug!("[UsbHost enumeration] -> Assigned({})", address);
-                    host.bus.interrupt_on_sof(false);
-                    EnumerationState::Assigned(speed, address)
-                },
-                _ => state,
+        EnumerationState::WaitSetAddress(speed, address) => match event {
+            Event::Detached => {
+                debug!("[UsbHost enumeration] -> WaitForDevice");
+                host.bus.interrupt_on_sof(false);
+                EnumerationState::WaitForDevice
             }
+            Event::ControlOutComplete(_) => {
+                debug!("[UsbHost enumeration] -> Assigned({})", address);
+                host.bus.interrupt_on_sof(false);
+                EnumerationState::Assigned(speed, address)
+            }
+            _ => state,
         },
 
         EnumerationState::Assigned(_speed, _address) => unreachable!(),

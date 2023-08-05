@@ -1,10 +1,13 @@
 use super::Driver;
-use core::num::NonZeroU8;
-use crate::types::{DeviceAddress, ConnectionSpeed, TransferType, SetupPacket};
 use crate::bus::HostBus;
-use crate::{UsbHost, PipeId, ControlError};
 use crate::descriptor;
-use usb_device::{UsbDirection, control::{Recipient, RequestType}};
+use crate::types::{ConnectionSpeed, DeviceAddress, SetupPacket, TransferType};
+use crate::{ControlError, PipeId, UsbHost};
+use core::num::NonZeroU8;
+use usb_device::{
+    control::{Recipient, RequestType},
+    UsbDirection,
+};
 
 /// Driver for boot keyboards
 ///
@@ -83,13 +86,15 @@ pub struct InputReport {
     pub modifier_status: ModifierStatus,
     _reserved: u8,
 
-    
     pub keypress: [Option<NonZeroU8>; 6],
 }
 
 impl InputReport {
     pub fn pressed_keys(&self) -> impl Iterator<Item = u8> + '_ {
-        self.keypress.iter().filter_map(|opt| *opt).map(|code| code.into())
+        self.keypress
+            .iter()
+            .filter_map(|opt| *opt)
+            .map(|code| code.into())
     }
 }
 
@@ -206,7 +211,10 @@ impl From<ControlError> for KbdError {
 
 impl<const MAX_DEVICES: usize> KbdDriver<MAX_DEVICES> {
     pub fn new() -> Self {
-        Self { devices: [None; MAX_DEVICES], event: None }
+        Self {
+            devices: [None; MAX_DEVICES],
+            event: None,
+        }
     }
 
     /// Returns the last keyboard event that occurred (if any) and clears it.
@@ -232,7 +240,12 @@ impl<const MAX_DEVICES: usize> KbdDriver<MAX_DEVICES> {
     ///
     /// The USB HID specification recommends a default interval of 500ms for keyboards (duration value: 125).
     ///
-    pub fn set_idle<B: HostBus>(&mut self, dev_addr: DeviceAddress, latency: u8, host: &mut UsbHost<B>) -> Result<(), KbdError> {
+    pub fn set_idle<B: HostBus>(
+        &mut self,
+        dev_addr: DeviceAddress,
+        latency: u8,
+        host: &mut UsbHost<B>,
+    ) -> Result<(), KbdError> {
         if let Some(device) = self.find_configured_device(dev_addr) {
             host.control_out(
                 Some(dev_addr),
@@ -261,7 +274,13 @@ impl<const MAX_DEVICES: usize> KbdDriver<MAX_DEVICES> {
     ///
     /// This method updates one of the bits in the output report (identified by [`KbdLed`]) and sents the
     /// updated report to the device.
-    pub fn set_led<B: HostBus>(&mut self, dev_addr: DeviceAddress, led: KbdLed, on: bool, host: &mut UsbHost<B>) -> Result<(), KbdError> {
+    pub fn set_led<B: HostBus>(
+        &mut self,
+        dev_addr: DeviceAddress,
+        led: KbdLed,
+        on: bool,
+        host: &mut UsbHost<B>,
+    ) -> Result<(), KbdError> {
         if let Some(device) = self.find_configured_device(dev_addr) {
             if on {
                 device.output_report |= 1 << (led as u8);
@@ -275,7 +294,7 @@ impl<const MAX_DEVICES: usize> KbdDriver<MAX_DEVICES> {
                     UsbDirection::Out,
                     RequestType::Class,
                     Recipient::Interface,
-                    0x09, // SetReport,
+                    0x09,   // SetReport,
                     2 << 8, // 2 means "output" report
                     0,
                     1,
@@ -288,7 +307,10 @@ impl<const MAX_DEVICES: usize> KbdDriver<MAX_DEVICES> {
         }
     }
 
-    fn find_device_slot(&mut self, device_address: DeviceAddress) -> Option<&mut Option<KbdDevice>> {
+    fn find_device_slot(
+        &mut self,
+        device_address: DeviceAddress,
+    ) -> Option<&mut Option<KbdDevice>> {
         self.devices.iter_mut().find(|dev| {
             if let Some(dev) = dev {
                 dev.device_address == device_address
@@ -306,16 +328,28 @@ impl<const MAX_DEVICES: usize> KbdDriver<MAX_DEVICES> {
         }
     }
 
-    fn find_pending_device(&mut self, device_address: DeviceAddress) -> Option<&mut PendingKbdDevice> {
+    fn find_pending_device(
+        &mut self,
+        device_address: DeviceAddress,
+    ) -> Option<&mut PendingKbdDevice> {
         match self.find_device(device_address) {
-            Some(KbdDevice { inner: KbdDeviceInner::Pending(pending_device), .. }) => Some(pending_device),
+            Some(KbdDevice {
+                inner: KbdDeviceInner::Pending(pending_device),
+                ..
+            }) => Some(pending_device),
             _ => None,
         }
     }
 
-    fn find_configured_device(&mut self, device_address: DeviceAddress) -> Option<&mut ConfiguredKbdDevice> {
+    fn find_configured_device(
+        &mut self,
+        device_address: DeviceAddress,
+    ) -> Option<&mut ConfiguredKbdDevice> {
         match self.find_device(device_address) {
-            Some(KbdDevice { inner: KbdDeviceInner::Configured(device), .. }) => Some(device),
+            Some(KbdDevice {
+                inner: KbdDeviceInner::Configured(device),
+                ..
+            }) => Some(device),
             _ => None,
         }
     }
@@ -341,7 +375,11 @@ impl<B: HostBus> Driver<B> for KbdDriver {
 
     fn detached(&mut self, device_address: DeviceAddress) {
         if let Some(slot) = self.find_device_slot(device_address) {
-            if let Some(KbdDevice { inner: KbdDeviceInner::Configured(_), .. }) = slot.take() {
+            if let Some(KbdDevice {
+                inner: KbdDeviceInner::Configured(_),
+                ..
+            }) = slot.take()
+            {
                 self.event = Some(KbdEvent::DeviceRemoved(device_address));
             }
         }
@@ -350,7 +388,8 @@ impl<B: HostBus> Driver<B> for KbdDriver {
     fn descriptor(&mut self, device_address: DeviceAddress, descriptor_type: u8, data: &[u8]) {
         if let Some(device) = self.find_pending_device(device_address) {
             if descriptor_type == descriptor::TYPE_CONFIGURATION as u8 {
-                if device.interface.is_none() { // we only care about new configurations if we haven't already found an interface that we can handle
+                if device.interface.is_none() {
+                    // we only care about new configurations if we haven't already found an interface that we can handle
                     if let Ok((_, config)) = descriptor::parse::configuration_descriptor(data) {
                         // keep track of the config value. If we encounter an interface descriptor within this configuration that
                         // we can handle, this will remain the final value.
@@ -362,14 +401,18 @@ impl<B: HostBus> Driver<B> for KbdDriver {
                 if let Ok((_, interface)) = descriptor::parse::interface_descriptor(data) {
                     if interface.interface_class == 0x03 && // HID
                         interface.interface_sub_class == 0x01 && // boot interface
-                        interface.interface_protocol  == 0x01 { // keyboard
-                            device.interface = Some(interface.interface_number);
-                        }
+                        interface.interface_protocol  == 0x01
+                    {
+                        // keyboard
+                        device.interface = Some(interface.interface_number);
+                    }
                 }
             } else if descriptor_type == descriptor::TYPE_ENDPOINT {
                 if device.interface.is_some() && device.endpoint.is_none() {
                     if let Ok((_, endpoint)) = descriptor::parse::endpoint_descriptor(data) {
-                        if endpoint.address.direction() == UsbDirection::In && endpoint.attributes.transfer_type() == TransferType::Interrupt {
+                        if endpoint.address.direction() == UsbDirection::In
+                            && endpoint.attributes.transfer_type() == TransferType::Interrupt
+                        {
                             device.endpoint = Some(endpoint.address.number());
                             device.interval = Some(endpoint.interval);
                         }
@@ -381,7 +424,9 @@ impl<B: HostBus> Driver<B> for KbdDriver {
 
     fn configure(&mut self, device_address: DeviceAddress) -> Option<u8> {
         // We choose a configuration only if we found an interface that we can handle
-        let config = self.find_pending_device(device_address).and_then(|device| device.supported_config());
+        let config = self
+            .find_pending_device(device_address)
+            .and_then(|device| device.supported_config());
 
         if config.is_none() {
             // clean up this device. We cannot handle it.
@@ -432,23 +477,30 @@ impl<B: HostBus> Driver<B> for KbdDriver {
 
         if let Some(configured_device) = configured_device {
             // Unwrap safety: if `find_pending_device` above succeeded, then `find_device_slot` will succeed here as well
-            self.find_device_slot(device_address).unwrap().replace(KbdDevice {
-                device_address,
-                inner: KbdDeviceInner::Configured(configured_device),
-            });
+            self.find_device_slot(device_address)
+                .unwrap()
+                .replace(KbdDevice {
+                    device_address,
+                    inner: KbdDeviceInner::Configured(configured_device),
+                });
         } else {
             self.remove_device(device_address);
         }
     }
 
-    fn completed_control(&mut self, dev_addr: DeviceAddress, _pipe_id: PipeId, _data: Option<&[u8]>) {
+    fn completed_control(
+        &mut self,
+        dev_addr: DeviceAddress,
+        _pipe_id: PipeId,
+        _data: Option<&[u8]>,
+    ) {
         self.event = Some(KbdEvent::ControlComplete(dev_addr));
     }
 
     fn completed_in(&mut self, device_address: DeviceAddress, pipe: PipeId, data: &[u8]) {
         if let Some(device) = self.find_configured_device(device_address) {
             if pipe == device.interrupt_pipe {
-                 let converted: Result<&InputReport, _> = data.try_into();
+                let converted: Result<&InputReport, _> = data.try_into();
                 if let Ok(input_report) = converted {
                     self.event = Some(KbdEvent::InputChanged(device_address, *input_report));
                 }
@@ -456,7 +508,12 @@ impl<B: HostBus> Driver<B> for KbdDriver {
         }
     }
 
-    fn completed_out(&mut self, _device_address: DeviceAddress, _pipe_id: PipeId, _data: &mut [u8]) {
+    fn completed_out(
+        &mut self,
+        _device_address: DeviceAddress,
+        _pipe_id: PipeId,
+        _data: &mut [u8],
+    ) {
         // ignored, since there are no OUT pipes in use.
     }
 }

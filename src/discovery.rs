@@ -1,9 +1,9 @@
-use crate::types::DeviceAddress;
 use crate::bus::HostBus;
-use crate::{UsbHost, Event};
-use usb_device::control::Recipient;
-use crate::driver::Driver;
 use crate::descriptor;
+use crate::driver::Driver;
+use crate::types::DeviceAddress;
+use crate::{Event, UsbHost};
+use usb_device::control::Recipient;
 
 #[derive(Copy, Clone)]
 pub enum DiscoveryState {
@@ -20,13 +20,31 @@ pub enum DiscoveryState {
 }
 
 /// Begin discovery, by requesting the device descriptor
-pub fn start_discovery<B: HostBus>(dev_addr: DeviceAddress, host: &mut UsbHost<B>) -> DiscoveryState {
+pub fn start_discovery<B: HostBus>(
+    dev_addr: DeviceAddress,
+    host: &mut UsbHost<B>,
+) -> DiscoveryState {
     // Unwrap safety: it is up to the UsbHost to start discovery only when no other transfer is in progress.
-    host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_DEVICE, 0, 18).ok().unwrap();
+    host.get_descriptor(
+        Some(dev_addr),
+        None,
+        Recipient::Device,
+        descriptor::TYPE_DEVICE,
+        0,
+        18,
+    )
+    .ok()
+    .unwrap();
     DiscoveryState::DeviceDesc
 }
 
-pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, state: DiscoveryState, drivers: &mut [&mut dyn Driver<B>], host: &mut UsbHost<B>) -> DiscoveryState {
+pub fn process_discovery<B: HostBus>(
+    event: Event,
+    dev_addr: DeviceAddress,
+    state: DiscoveryState,
+    drivers: &mut [&mut dyn Driver<B>],
+    host: &mut UsbHost<B>,
+) -> DiscoveryState {
     match state {
         DiscoveryState::DeviceDesc => {
             match event {
@@ -43,12 +61,21 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                     };
 
                     // Unwrap safety: when a `Control*` event is emitted, the host is idle and a transfer can be started
-                    host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_CONFIGURATION, 0, 9).ok().unwrap();
+                    host.get_descriptor(
+                        Some(dev_addr),
+                        None,
+                        Recipient::Device,
+                        descriptor::TYPE_CONFIGURATION,
+                        0,
+                        9,
+                    )
+                    .ok()
+                    .unwrap();
                     DiscoveryState::ConfigDescLen(0, device_descriptor.num_configurations)
                 }
-                _ => state
+                _ => state,
             }
-        },
+        }
         DiscoveryState::ConfigDescLen(n, m) => {
             match event {
                 Event::ControlInData(_, length) => {
@@ -60,12 +87,21 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                         return DiscoveryState::ParseError
                     };
                     // Unwrap safety: when a `Control*` event is emitted, the host is idle and a transfer can be started
-                    host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_CONFIGURATION, n, total_length).ok().unwrap();
+                    host.get_descriptor(
+                        Some(dev_addr),
+                        None,
+                        Recipient::Device,
+                        descriptor::TYPE_CONFIGURATION,
+                        n,
+                        total_length,
+                    )
+                    .ok()
+                    .unwrap();
                     DiscoveryState::ConfigDesc(n, m)
                 }
-                _ => state
+                _ => state,
             }
-        },
+        }
         DiscoveryState::ConfigDesc(n, m) => {
             match event {
                 Event::ControlInData(_, length) => {
@@ -75,7 +111,11 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                             return DiscoveryState::ParseError
                         };
                         for driver in &mut *drivers {
-                            driver.descriptor(dev_addr, descriptor.descriptor_type, descriptor.data);
+                            driver.descriptor(
+                                dev_addr,
+                                descriptor.descriptor_type,
+                                descriptor.data,
+                            );
                         }
                         if rest.len() > 0 {
                             data = rest;
@@ -85,16 +125,25 @@ pub fn process_discovery<B: HostBus>(event: Event, dev_addr: DeviceAddress, stat
                     }
                     if (n + 1) < m {
                         // Unwrap safety: when a `Control*` event is emitted, the host is idle and a transfer can be started
-                        host.get_descriptor(Some(dev_addr), None, Recipient::Device, descriptor::TYPE_CONFIGURATION, n + 1, 9).ok().unwrap();
+                        host.get_descriptor(
+                            Some(dev_addr),
+                            None,
+                            Recipient::Device,
+                            descriptor::TYPE_CONFIGURATION,
+                            n + 1,
+                            9,
+                        )
+                        .ok()
+                        .unwrap();
                         DiscoveryState::ConfigDesc(n + 1, m)
                     } else {
                         // NOTE: do not start a transfer here, the UsbHost code expects the bus to stay idle.
                         DiscoveryState::Done
                     }
                 }
-                _ => state
+                _ => state,
             }
-        },
+        }
         DiscoveryState::Done | DiscoveryState::ParseError => unreachable!(),
     }
 }
