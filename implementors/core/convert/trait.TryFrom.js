@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"usbh":[["impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.71.0/core/convert/trait.TryFrom.html\" title=\"trait core::convert::TryFrom\">TryFrom</a>&lt;&amp;'a [<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.71.0/core/primitive.u8.html\">u8</a>]&gt; for &amp;'a <a class=\"struct\" href=\"usbh/driver/kbd/struct.InputReport.html\" title=\"struct usbh::driver::kbd::InputReport\">InputReport</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

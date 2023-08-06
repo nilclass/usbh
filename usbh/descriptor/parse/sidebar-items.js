@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["any_descriptor","bcd_16","configuration_descriptor","configuration_descriptor_length","device_descriptor","endpoint_descriptor","interface_descriptor"]};

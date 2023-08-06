@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Experimental host-side USB stack for embedded devices."><title>usbh - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-f3501f0f5ae15dfb.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="usbh" data-themes="" data-resource-suffix="" data-rustdoc-version="1.71.0 (8ede3aae2 2023-07-12)" data-search-js="search-4926e5fc22a5646a.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-f0540c1d82cde29b.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="logo-container" href="../usbh/index.html"><img class="rust-logo" src="../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><h2></h2></nav><nav class="sidebar"><a class="logo-container" href="../usbh/index.html"><img class="rust-logo" src="../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><h2 class="location"><a href="#">Crate usbh</a></h2><div class="sidebar-elems"><ul class="block"><li class="version">Version 0.1.0</li><li><a id="all-types" href="all.html">All Items</a></li></ul><section><ul class="block"><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li></ul></section></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Crate <a class="mod" href="#">usbh</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="srclink" href="../src/usbh/lib.rs.html#1-759">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Experimental host-side USB stack for embedded devices.</p>
+<p><code>usbh</code> aims to abstract between two things:</p>
+<ul>
+<li>embedded USB host controllers on one side</li>
+<li>function specific USB drivers on the other side</li>
+</ul>
+<p>The goal is that a driver can be developed independently from the specific host controller hardware, similarly to the <code>usb-device</code> crate allowing implementing USB functions independently of the USB device controller.</p>
+<h3 id="implementing-drivers"><a href="#implementing-drivers">Implementing drivers</a></h3>
+<p>Please check out the <a href="driver/index.html" title="mod usbh::driver">documentation for the <code>driver</code> module</a>.</p>
+<h3 id="adding-support-for-new-hardware"><a href="#adding-support-for-new-hardware">Adding support for new hardware</a></h3>
+<p>Since this project is in an early stage, this area is largely unexplored.</p>
+<p>The <a href="bus/index.html" title="mod usbh::bus"><code>bus</code> module</a> contains a <code>HostBus</code> trait, which must be implemented for the target hardware.</p>
+<p>If you are planning to implement support for a new hardware, please <a href="https://github.com/nilclass/usbh/issues/new?title=Hardware%20support%20for:%20...">open an issue</a>, so we can figure out together if any additions or changes to the HostBus interface are necessary to accomodate it.</p>
+<h3 id="usage"><a href="#usage">Usage</a></h3>
+<p>The code block below shows a brief example, leaving out any hardware and driver specifics.</p>
+<p>For a full example, please check out the <a href="https://github.com/nilclass/rp-hal-usb-host-example">rp-hal-usb-host-example</a> which contains a runnable example, targeting RP2040 based boards.</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>usbh::{
+    UsbHost,
+    PollResult,
+};
+
+<span class="kw">fn </span>main() {
+    <span class="comment">// must implement usbh::bus::HostBus
+    </span><span class="kw">let </span>host_bus = hardware_specific_host_bus_initialization();
+
+    <span class="kw">let </span>usb_host = UsbHost::new(host_bus);
+
+    <span class="comment">// these must implement usbh::driver::Driver;
+    </span><span class="kw">let </span><span class="kw-2">mut </span>driver1 = create_first_driver();
+    <span class="kw">let </span><span class="kw-2">mut </span>driver2 = create_second_driver();
+
+    <span class="comment">// (leaving out details on how to share `usb_host` and `driver*` with the interrupt routine)
+</span>}
+
+<span class="attr">#[...]
+</span><span class="kw">fn </span>USB_IRQ() {
+    <span class="kw">match </span>usb_host.poll(<span class="kw-2">&amp;mut </span>[<span class="kw-2">&amp;mut </span>driver1, <span class="kw-2">&amp;mut </span>driver2]) {
+        PollResult::BusError(error) =&gt; {
+            <span class="comment">// something went wrong
+        </span>}
+        PollEvent::DiscoveryError(device_address) =&gt; {
+            <span class="comment">// device with specified address misbehaved during discovery (it will likely not be usable)
+        </span>}
+        PollResult::NoDevice =&gt; {
+            <span class="comment">// no device is currently connected
+        </span>}
+        Event::Busy =&gt; {
+            <span class="comment">// Host is currently busy with a transfer.
+            // Trying to start a transfer now will return `WouldBlock`.
+        </span>}
+        Event::Idle =&gt; {
+            <span class="comment">// Host is not currently handling any transfer.
+            // A new transfer can be started, if desired.
+        </span>}
+    }
+
+    <span class="comment">// After polling the USB host, the drivers may have new things to report:
+    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(event) = driver1.take_event() {
+       <span class="comment">// ...
+    </span>}
+    <span class="kw">if </span>driver2.something_something() {
+       <span class="comment">// ...
+    </span>}
+}</code></pre></div>
+</div></details><h2 id="modules" class="small-section-header"><a href="#modules">Modules</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="bus/index.html" title="mod usbh::bus">bus</a></div><div class="desc docblock-short">Interface for host bus hardware</div></li><li><div class="item-name"><a class="mod" href="descriptor/index.html" title="mod usbh::descriptor">descriptor</a></div><div class="desc docblock-short">Types for (standard) descriptors</div></li><li><div class="item-name"><a class="mod" href="driver/index.html" title="mod usbh::driver">driver</a></div><div class="desc docblock-short">Interface for implementing drivers</div></li><li><div class="item-name"><a class="mod" href="types/index.html" title="mod usbh::types">types</a></div><div class="desc docblock-short">Common types used throughout the crate</div></li></ul><h2 id="structs" class="small-section-header"><a href="#structs">Structs</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.PipeId.html" title="struct usbh::PipeId">PipeId</a></div><div class="desc docblock-short">Handle for a pipe</div></li><li><div class="item-name"><a class="struct" href="struct.UsbHost.html" title="struct usbh::UsbHost">UsbHost</a></div><div class="desc docblock-short">Entrypoint for the USB host stack</div></li></ul><h2 id="enums" class="small-section-header"><a href="#enums">Enums</a></h2><ul class="item-table"><li><div class="item-name"><a class="enum" href="enum.ControlError.html" title="enum usbh::ControlError">ControlError</a></div><div class="desc docblock-short">Error initiating a control transfer</div></li><li><div class="item-name"><a class="enum" href="enum.Event.html" title="enum usbh::Event">Event</a></div><div class="desc docblock-short">Internal event type, used by <code>poll</code> and the enumeration process</div></li><li><div class="item-name"><a class="enum" href="enum.PollResult.html" title="enum usbh::PollResult">PollResult</a></div><div class="desc docblock-short">Result returned from <code>UsbHost::poll</code>.</div></li></ul></section></div></main></body></html>

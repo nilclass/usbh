@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Interface for implementing drivers"><title>usbh::driver - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceSerif4-Bold-a2c9cd1067f8b328.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2"><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-f3501f0f5ae15dfb.css" id="mainThemeStyle"><div id="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="usbh" data-themes="" data-resource-suffix="" data-rustdoc-version="1.71.0 (8ede3aae2 2023-07-12)" data-search-js="search-4926e5fc22a5646a.js" data-settings-js="settings-de11bff964e9d4e5.js" data-settings-css="settings-8c76f75bfb6bd192.css" data-theme-light-css="light-0f8c037637f9eb3e.css" data-theme-dark-css="dark-1097f8e92a01e3cf.css" data-theme-ayu-css="ayu-614652228113ac93.css" ></div><script src="../../static.files/storage-62ce34ea385b278a.js"></script><script defer src="../../static.files/main-f0540c1d82cde29b.js"></script><noscript><link rel="stylesheet" media="(prefers-color-scheme:light)" href="../../static.files/light-0f8c037637f9eb3e.css"><link rel="stylesheet" media="(prefers-color-scheme:dark)" href="../../static.files/dark-1097f8e92a01e3cf.css"><link rel="stylesheet" href="../../static.files/noscript-13285aec31fa243e.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="logo-container" href="../../usbh/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><h2></h2></nav><nav class="sidebar"><a class="logo-container" href="../../usbh/index.html"><img class="rust-logo" src="../../static.files/rust-logo-151179464ae7ed46.svg" alt="logo"></a><h2 class="location"><a href="#">Module driver</a></h2><div class="sidebar-elems"><section><ul class="block"><li><a href="#modules">Modules</a></li><li><a href="#traits">Traits</a></li></ul></section></div></nav><main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../index.html">usbh</a>::<wbr><a class="mod" href="#">driver</a><button id="copy-path" title="Copy item path to clipboard"><img src="../../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="srclink" href="../../src/usbh/driver.rs.html#1-144">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Interface for implementing drivers</p>
+<p>Drivers are instantiated by application code and passed to the <a href="../struct.UsbHost.html#method.poll" title="method usbh::UsbHost::poll"><code>UsbHost::poll</code></a> function.</p>
+<p>The methods defined in this trait are then called by by the UsbHost at the appropriate times.</p>
+<p>All of these methods are called on <em>all</em> of the drivers (with the exception fo the <a href="trait.Driver.html#tymethod.configure" title="method usbh::driver::Driver::configure"><code>configure</code></a> method).</p>
+<p>Drivers must interpret the <code>dev_addr</code> parameter (and <code>pipe_id</code> where applicable) to determine if the event
+targets one of the devices that the driver is controlling.</p>
+<p>In general multiple drivers can communicate with the same device, except that only one driver can decide which device
+configuration to set.</p>
+<h3 id="walkthrough-for-a-newly-connected-device"><a href="#walkthrough-for-a-newly-connected-device">Walkthrough for a newly connected device</a></h3>
+<ol>
+<li>Initially the device has no address, so the host enters <strong>enumeration</strong></li>
+<li>When enumeration has succeeded, the host calls <a href="trait.Driver.html#tymethod.attached" title="method usbh::driver::Driver::attached"><code>attached</code></a>, informing drivers that a new device is available, and enters <strong>discovery</strong> phase</li>
+<li>During discovery, the host requests the <em>device descriptor</em> from the device, and subsequently requests the <em>configuration descriptor</em> for each of
+the configurations that the device supports. All of these descriptors are parsed into <code>descriptor_type</code> and <code>data</code> and passed to the <a href="trait.Driver.html#tymethod.descriptor" title="method usbh::driver::Driver::descriptor"><code>descriptor</code></a> method one-by-one.
+When requesting a configuration descriptor, the device sends <em>all</em> of the nested descriptors (interface, endpoint, class specifics, …) as well.
+The discovery logic separates these descriptors and passes each of them to the <a href="trait.Driver.html#tymethod.descriptor" title="method usbh::driver::Driver::descriptor"><code>descriptor</code></a> method separately.</li>
+<li>When all descriptors have been fetched, the host enters the <strong>configuration</strong> phase.</li>
+<li>During configuration, the host calls <a href="trait.Driver.html#tymethod.configure" title="method usbh::driver::Driver::configure"><code>configure</code></a> on each of the drivers <em>until one of them returns a value</em>.
+The value must be a valid configuration value (i.e. come from a <a href="../descriptor/struct.ConfigurationDescriptor.html#structfield.value" title="field usbh::descriptor::ConfigurationDescriptor::value"><code>ConfigurationDescriptor::value</code></a>).</li>
+<li>If all of the drivers’ <code>configure</code> calls returned <code>None</code> (no driver is interested in it), the host enteres <strong>dormant</strong> state.
+Otherwise the host calls <a href="trait.Driver.html#tymethod.configured" title="method usbh::driver::Driver::configured"><code>configured</code></a> on <em>all</em> of the drivers and enteres <strong>configured</strong> state.</li>
+<li>The <a href="trait.Driver.html#tymethod.configured" title="method usbh::driver::Driver::configured"><code>configured</code></a> callback informs the driver about the chosen configuration, and gives access to the host interface,
+to allow the driver to set up pipes for the device’s endpoints.
+Currently only <strong>control pipes</strong> and <strong>interrupt pipes</strong> are supported.</li>
+</ol>
+<p>This concludes the configuration phase. If the device ends up in <strong>configured</strong> state (one of the drivers selected a configuration),
+drivers can communicate with the device from now on.</p>
+<h3 id="communicating-with-the-device"><a href="#communicating-with-the-device">Communicating with the device</a></h3>
+<p>Drivers cannot initiate communication through the host on their own, they must be given access to the <code>UsbHost</code> instance by application code to do so.</p>
+<p>For this purpose the driver should define function specific methods on the driver object, which take a <code>&amp;mut UsbHost&lt;B&gt;</code>.</p>
+<p>Communication may only happen through the pipes which were created by the <a href="trait.Driver.html#tymethod.configured" title="method usbh::driver::Driver::configured"><code>Driver::configured</code></a> callback. Pipes are identified by a <a href="../struct.PipeId.html" title="struct usbh::PipeId"><code>PipeId</code></a>.</p>
+<h4 id="control-transfers"><a href="#control-transfers">Control transfers</a></h4>
+<p>To initiate a control transfer, the driver must have created a control pipe (<a href="../struct.UsbHost.html#method.create_control_pipe" title="method usbh::UsbHost::create_control_pipe"><code>create_control_pipe</code></a>).</p>
+<p>That pipe can then be passed to <a href="../struct.UsbHost.html#method.control_in" title="method usbh::UsbHost::control_in"><code>control_in</code></a> or <a href="../struct.UsbHost.html#method.control_out" title="method usbh::UsbHost::control_out"><code>control_out</code></a>, to initiate a transfer.</p>
+<p>Example:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="comment">// our driver keeps track of only one device, and a single pipe
+</span><span class="kw">struct </span>MyDriver {
+    dev_addr: <span class="prelude-ty">Option</span>&lt;DeviceAddress&gt;,
+    control_pipe: <span class="prelude-ty">Option</span>&lt;PipeId&gt;,
+}
+
+<span class="kw">impl</span>&lt;B: HostBus&gt; Driver&lt;B&gt; <span class="kw">for </span>MyDriver {
+    <span class="kw">fn </span>configured(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dev_addr: DeviceAddress, _value: u8, host: <span class="kw-2">&amp;mut </span>UsbHost) {
+        <span class="self">self</span>.dev_addr = <span class="prelude-val">Some</span>(dev_addr);
+        <span class="comment">// NOTE: the host can only handle a fixed number of pipes. If it runs out of pipes, None is returned.
+        </span><span class="self">self</span>.control_pipe = host.create_control_pipe(dev_addr);
+    }
+
+    <span class="comment">// remaining methods omitted for brevity...
+</span>}
+
+<span class="kw">impl </span>MyDriver {
+    <span class="comment">// driver specific method, which will be called by application code
+    </span><span class="kw">fn </span>turn_on_led&lt;B: HostBus&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, host: <span class="kw-2">&amp;mut </span>UsbHost&lt;B&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), ControlError&gt; {
+        <span class="kw">if let </span>(<span class="prelude-val">Some</span>(dev_addr), <span class="prelude-val">Some</span>(control_pipe)) = (<span class="self">self</span>.dev_addr, <span class="self">self</span>.control_pipe) {
+            host.control_out(
+                <span class="comment">// device being addressed
+                </span><span class="prelude-val">Some</span>(dev_addr),
+                <span class="comment">// control pipe to use
+                </span><span class="prelude-val">Some</span>(control_pipe),
+                <span class="comment">// setup packet (function specific)
+                </span>SetupPacket::new(UsbDirection::Out, <span class="comment">/* ... */</span>),
+                <span class="comment">// data to send (function specific)
+                </span><span class="kw-2">&amp;</span>[<span class="comment">/* ... */</span>],
+            )<span class="question-mark">?</span>;
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+}</code></pre></div>
+</div></details><h2 id="modules" class="small-section-header"><a href="#modules">Modules</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="kbd/index.html" title="mod usbh::driver::kbd">kbd</a></div></li><li><div class="item-name"><a class="mod" href="log/index.html" title="mod usbh::driver::log">log</a></div></li></ul><h2 id="traits" class="small-section-header"><a href="#traits">Traits</a></h2><ul class="item-table"><li><div class="item-name"><a class="trait" href="trait.Driver.html" title="trait usbh::driver::Driver">Driver</a></div><div class="desc docblock-short">The Driver trait</div></li></ul></section></div></main></body></html>

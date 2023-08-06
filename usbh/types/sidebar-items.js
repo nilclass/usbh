@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConnectionSpeed","TransferType"],"struct":["Bcd16","DeviceAddress","SetupPacket"]};

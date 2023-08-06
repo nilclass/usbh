@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TYPE_CONFIGURATION","TYPE_DEVICE","TYPE_ENDPOINT","TYPE_INTERFACE","TYPE_STRING"],"enum":["SynchronizationType","UsageType"],"mod":["parse"],"struct":["ConfigurationAttributes","ConfigurationDescriptor","Descriptor","DeviceDescriptor","EndpointAddress","EndpointAttributes","EndpointDescriptor","InterfaceDescriptor"]};
