@@ -381,7 +381,7 @@ impl<B: HostBus> UsbHost<B> {
 
                 Event::ControlInData(pipe_id, len) => {
                     if let Some(pipe_id) = pipe_id {
-                        let data = unsafe { self.bus.control_buffer(len as usize) };
+                        let data = self.bus.received_data(len as usize);
                         for driver in drivers {
                             driver.completed_control(*dev_addr, pipe_id, Some(data));
                         }
@@ -718,20 +718,25 @@ impl<B: HostBus> UsbHost<B> {
         size: u16,
         interval: u8,
     ) -> Option<PipeId> {
-        self.bus()
-            .create_interrupt_pipe(dev_addr, ep_number, direction, size, interval)
-            .and_then(|(ptr, bus_ref)| {
-                self.alloc_pipe().map(|(id, slot)| {
-                    slot.replace(Pipe::Interrupt {
-                        dev_addr,
-                        bus_ref,
-                        direction,
-                        size,
-                        ptr,
-                    });
-                    id
-                })
-            })
+        if let Some(bus::InterruptPipe { bus_ref, ptr }) = self.bus().create_interrupt_pipe(dev_addr, ep_number, direction, size, interval) {
+            if let Some((id, slot)) = self.alloc_pipe() {
+                slot.replace(Pipe::Interrupt {
+                    dev_addr,
+                    bus_ref,
+                    direction,
+                    size,
+                    ptr,
+                });
+                Some(id)
+            } else {
+                self.bus().release_interrupt_pipe(bus_ref);
+                // the host has no more free pipe slots
+                None
+            }
+        } else {
+            // the bus has no free interrupt pipes
+            None
+        }
     }
 
     pub fn bus(&mut self) -> &mut B {

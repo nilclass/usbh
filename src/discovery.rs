@@ -50,7 +50,7 @@ pub fn process_discovery<B: HostBus>(
         DiscoveryState::DeviceDesc => {
             match event {
                 Event::ControlInData(_, length) => {
-                    let data = unsafe { host.bus.control_buffer(length as usize) };
+                    let data = host.bus.received_data(length as usize);
                     let Ok((_, descriptor)) = descriptor::parse::any_descriptor(data) else {
                         trace!("Failed to parse descriptor frame: {}", data);
                         return DiscoveryState::ParseError
@@ -83,7 +83,7 @@ pub fn process_discovery<B: HostBus>(
         DiscoveryState::ConfigDescLen(n, m) => {
             match event {
                 Event::ControlInData(_, length) => {
-                    let data = unsafe { host.bus.control_buffer(length as usize) };
+                    let data = host.bus.received_data(length as usize);
                     let Ok((_, descriptor)) = descriptor::parse::any_descriptor(data) else {
                         trace!("Failed to parse descriptor frame: {}", data);
                         return DiscoveryState::ParseError
@@ -112,7 +112,7 @@ pub fn process_discovery<B: HostBus>(
         DiscoveryState::ConfigDesc(n, m) => {
             match event {
                 Event::ControlInData(_, length) => {
-                    let mut data = unsafe { host.bus.control_buffer(length as usize) };
+                    let mut data = host.bus.received_data(length as usize);
                     loop {
                         let Ok((rest, descriptor)) = descriptor::parse::any_descriptor(data) else {
                             trace!("Failed to parse descriptor frame: {}", data);
