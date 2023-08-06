@@ -755,5 +755,9 @@ impl<B: HostBus> UsbHost<B> {
                 _ => {}
             }
         }
+
+        if self.active_transfer.is_some() {
+            self.active_transfer.take();
+        }
     }
 }
