@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["kbd","log"],"trait":["Driver"]};
+window.SIDEBAR_ITEMS = {"mod":["detector","hub","kbd","log"],"trait":["Driver"]};

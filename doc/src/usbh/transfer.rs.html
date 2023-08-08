@@ -130,7 +130,7 @@
         }
     }
 
-    <span class="kw">pub fn </span>new_control_out(length: u16) -&gt; <span class="self">Self </span>{
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new_control_out(length: u16) -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{
             length,
             state: TransferState::Control(UsbDirection::Out, ControlState::WaitSetup),

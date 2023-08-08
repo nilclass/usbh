@@ -229,6 +229,14 @@
 <a href="#229" id="229">229</a>
 <a href="#230" id="230">230</a>
 <a href="#231" id="231">231</a>
+<a href="#232" id="232">232</a>
+<a href="#233" id="233">233</a>
+<a href="#234" id="234">234</a>
+<a href="#235" id="235">235</a>
+<a href="#236" id="236">236</a>
+<a href="#237" id="237">237</a>
+<a href="#238" id="238">238</a>
+<a href="#239" id="239">239</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Interface for host bus hardware
 //!
 //! In order to use `usbh` on a given device, there must be a [`HostBus`] implementation specific to that device.
@@ -285,6 +293,14 @@
         endpoint: u8,
         transfer_type: TransferType,
     );
+
+    <span class="kw">fn </span>ls_preamble(<span class="kw-2">&amp;mut </span><span class="self">self</span>, enabled: bool);
+
+    <span class="doccomment">/// Stop current transaction, if there is one in progress
+    ///
+    /// This will be called if a `RxTimeout` is encountered, to prevent the transaction from being
+    /// retried indefinitely.
+    </span><span class="kw">fn </span>stop_transaction(<span class="kw-2">&amp;mut </span><span class="self">self</span>);
 
     <span class="doccomment">/// Write a SETUP packet to the bus
     ///

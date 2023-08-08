@@ -761,6 +761,38 @@
 <a href="#761" id="761">761</a>
 <a href="#762" id="762">762</a>
 <a href="#763" id="763">763</a>
+<a href="#764" id="764">764</a>
+<a href="#765" id="765">765</a>
+<a href="#766" id="766">766</a>
+<a href="#767" id="767">767</a>
+<a href="#768" id="768">768</a>
+<a href="#769" id="769">769</a>
+<a href="#770" id="770">770</a>
+<a href="#771" id="771">771</a>
+<a href="#772" id="772">772</a>
+<a href="#773" id="773">773</a>
+<a href="#774" id="774">774</a>
+<a href="#775" id="775">775</a>
+<a href="#776" id="776">776</a>
+<a href="#777" id="777">777</a>
+<a href="#778" id="778">778</a>
+<a href="#779" id="779">779</a>
+<a href="#780" id="780">780</a>
+<a href="#781" id="781">781</a>
+<a href="#782" id="782">782</a>
+<a href="#783" id="783">783</a>
+<a href="#784" id="784">784</a>
+<a href="#785" id="785">785</a>
+<a href="#786" id="786">786</a>
+<a href="#787" id="787">787</a>
+<a href="#788" id="788">788</a>
+<a href="#789" id="789">789</a>
+<a href="#790" id="790">790</a>
+<a href="#791" id="791">791</a>
+<a href="#792" id="792">792</a>
+<a href="#793" id="793">793</a>
+<a href="#794" id="794">794</a>
+<a href="#795" id="795">795</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Experimental host-side USB stack for embedded devices.
 //!
 //! `usbh` aims to abstract between two things:
@@ -849,7 +881,8 @@
 
 <span class="kw">mod </span>discovery;
 <span class="kw">mod </span>enumeration;
-<span class="kw">mod </span>transfer;
+<span class="kw">mod </span>enumerator; <span class="comment">// alternative.
+</span><span class="kw">mod </span>transfer;
 
 <span class="kw">pub mod </span>descriptor;
 
@@ -1053,11 +1086,17 @@
                     </span>Event::Resume
                 }
                 bus::Event::Stall =&gt; {
-                    <span class="comment">// TODO: figure out if we should reset everything in case of a stall, or just ignore it until the device is unplugged.
-                    // Notifying the drivers and the application of this condition would also make sense.
-                    </span>Event::Stall
+                    <span class="comment">// abort current transfer
+                    </span><span class="self">self</span>.active_transfer.take();
+                    Event::Stall
                 }
-                bus::Event::Error(error) =&gt; Event::BusError(error),
+                bus::Event::Error(error) =&gt; {
+                    <span class="kw">if </span>error == bus::Error::RxTimeout {
+                        <span class="self">self</span>.bus.stop_transaction();
+                        <span class="self">self</span>.active_transfer = <span class="prelude-val">None</span>;
+                    }
+                    Event::BusError(error)
+                },
                 bus::Event::InterruptPipe(buf_ref) =&gt; Event::InterruptPipe(buf_ref),
                 bus::Event::Sof =&gt; Event::Sof,
             }
@@ -1143,11 +1182,13 @@
                 }
 
                 Event::ControlInData(pipe_id, len) =&gt; {
+                    <span class="kw">let </span>data = <span class="self">self</span>.bus.received_data(len <span class="kw">as </span>usize);
                     <span class="kw">if let </span><span class="prelude-val">Some</span>(pipe_id) = pipe_id {
-                        <span class="kw">let </span>data = <span class="self">self</span>.bus.received_data(len <span class="kw">as </span>usize);
                         <span class="kw">for </span>driver <span class="kw">in </span>drivers {
                             driver.completed_control(<span class="kw-2">*</span>dev_addr, pipe_id, <span class="prelude-val">Some</span>(data));
                         }
+                    } <span class="kw">else </span>{
+                        <span class="macro">defmt::warn!</span>(<span class="string">&quot;Control in data w/o pipe: {}&quot;</span>, data);
                     }
                 }
 
@@ -1156,6 +1197,8 @@
                         <span class="kw">for </span>driver <span class="kw">in </span>drivers {
                             driver.completed_control(<span class="kw-2">*</span>dev_addr, pipe_id, <span class="prelude-val">None</span>);
                         }
+                    } <span class="kw">else </span>{
+                        <span class="macro">defmt::warn!</span>(<span class="string">&quot;Control out complete w/o pipe&quot;</span>);
                     }
                 }
 
@@ -1205,6 +1248,12 @@
                 }
 
                 Event::BusError(error) =&gt; <span class="kw">return </span>PollResult::BusError(error),
+
+                Event::Stall =&gt; {
+                    <span class="kw">for </span>driver <span class="kw">in </span>drivers {
+                        driver.stall(<span class="kw-2">*</span>dev_addr);
+                    }
+                }
 
                 <span class="kw">_ </span>=&gt; {}
             },
@@ -1286,6 +1335,10 @@
             <span class="self">self</span>.last_address += <span class="number">1</span>;
         }
         DeviceAddress(NonZeroU8::new(<span class="self">self</span>.last_address).unwrap())
+    }
+
+    <span class="kw">pub fn </span>ls_preamble(<span class="kw-2">&amp;mut </span><span class="self">self</span>, enable: bool) {
+        <span class="self">self</span>.bus.ls_preamble(enable);
     }
 
     <span class="doccomment">/// Initiate an IN transfer on the control endpoint of the given device
@@ -1409,6 +1462,15 @@
         )
     }
 
+    <span class="kw">pub fn </span>get_status(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        dev_addr: DeviceAddress,
+        pipe_id: PipeId,
+        recipient: Recipient,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), ControlError&gt; {
+        <span class="self">self</span>.control_in(<span class="prelude-val">Some</span>(dev_addr), <span class="prelude-val">Some</span>(pipe_id), SetupPacket::new(UsbDirection::In, RequestType::Standard, recipient, Request::GET_STATUS, <span class="number">0</span>, <span class="number">0</span>, <span class="number">2</span>))
+    }
+
     <span class="doccomment">/// Initiate a `Set_Address` (0x05) control OUT transfer
     ///
     /// Private, since this is only used by the enumeration process.
@@ -1505,6 +1567,8 @@
     <span class="kw">pub fn </span>bus(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>B {
         <span class="kw-2">&amp;mut </span><span class="self">self</span>.bus
     }
+
+    <span class="kw">pub fn </span>release_pipe(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pipe_id: PipeId) {}
 
     <span class="doccomment">/// Clean up after device was removed
     </span><span class="kw">fn </span>cleanup(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr: DeviceAddress) {

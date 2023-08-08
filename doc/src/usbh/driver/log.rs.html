@@ -190,9 +190,15 @@
 <a href="#190" id="190">190</a>
 <a href="#191" id="191">191</a>
 <a href="#192" id="192">192</a>
+<a href="#193" id="193">193</a>
+<a href="#194" id="194">194</a>
+<a href="#195" id="195">195</a>
+<a href="#196" id="196">196</a>
+<a href="#197" id="197">197</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">super</span>::Driver;
 <span class="kw">use </span><span class="kw">crate</span>::bus::HostBus;
 <span class="kw">use </span><span class="kw">crate</span>::descriptor;
+<span class="kw">use </span><span class="kw">crate</span>::types::DeviceAddress;
 <span class="kw">use </span>defmt::{bitflags, info};
 
 <span class="doccomment">/// A [`Driver`] which logs various events
@@ -223,7 +229,7 @@
 <span class="kw">impl</span>&lt;B: HostBus&gt; Driver&lt;B&gt; <span class="kw">for </span>LogDriver {
     <span class="kw">fn </span>attached(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        dev_addr: <span class="kw">crate</span>::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         connection_speed: <span class="kw">crate</span>::types::ConnectionSpeed,
     ) {
         <span class="kw">if </span><span class="self">self</span>.<span class="number">0</span>.contains(EventMask::ATTACHED) {
@@ -235,7 +241,7 @@
         }
     }
 
-    <span class="kw">fn </span>detached(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dev_addr: <span class="kw">crate</span>::types::DeviceAddress) {
+    <span class="kw">fn </span>detached(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dev_addr: DeviceAddress) {
         <span class="kw">if </span><span class="self">self</span>.<span class="number">0</span>.contains(EventMask::DETACHED) {
             <span class="macro">info!</span>(
                 <span class="string">&quot;[usbh LogDriver] Device {} was detached&quot;</span>,
@@ -246,7 +252,7 @@
 
     <span class="kw">fn </span>descriptor(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        dev_addr: <span class="kw">crate</span>::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         descriptor_type: u8,
         data: <span class="kw-2">&amp;</span>[u8],
     ) {
@@ -311,7 +317,7 @@
         }
     }
 
-    <span class="kw">fn </span>configure(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dev_addr: <span class="kw">crate</span>::types::DeviceAddress) -&gt; <span class="prelude-ty">Option</span>&lt;u8&gt; {
+    <span class="kw">fn </span>configure(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dev_addr: DeviceAddress) -&gt; <span class="prelude-ty">Option</span>&lt;u8&gt; {
         <span class="kw">if </span><span class="self">self</span>.<span class="number">0</span>.contains(EventMask::CONFIGURE) {
             <span class="macro">info!</span>(
                 <span class="string">&quot;[usbh LogDriver] Device {} is looking for a configuration&quot;</span>,
@@ -323,7 +329,7 @@
 
     <span class="kw">fn </span>configured(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        dev_addr: <span class="kw">crate</span>::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         value: u8,
         _host: <span class="kw-2">&amp;mut </span><span class="kw">crate</span>::UsbHost&lt;B&gt;,
     ) {
@@ -338,7 +344,7 @@
 
     <span class="kw">fn </span>completed_control(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        dev_addr: <span class="kw">crate</span>::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         pipe_id: <span class="kw">crate</span>::PipeId,
         data: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>[u8]&gt;,
     ) {
@@ -354,7 +360,7 @@
 
     <span class="kw">fn </span>completed_in(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        dev_addr: <span class="kw">crate</span>::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         pipe_id: <span class="kw">crate</span>::PipeId,
         _data: <span class="kw-2">&amp;</span>[u8],
     ) {
@@ -369,7 +375,7 @@
 
     <span class="kw">fn </span>completed_out(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        dev_addr: <span class="kw">crate</span>::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         pipe_id: <span class="kw">crate</span>::PipeId,
         _data: <span class="kw-2">&amp;mut </span>[u8],
     ) {
@@ -380,6 +386,10 @@
                 pipe_id.<span class="number">0</span>,
             );
         }
+    }
+
+    <span class="kw">fn </span>stall(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dev_addr: DeviceAddress) {
+        <span class="macro">info!</span>(<span class="string">&quot;[usbh LogDriver] Device {}: STALL&quot;</span>, u8::from(dev_addr));
     }
 }
 </code></pre></div></section></main></body></html>
