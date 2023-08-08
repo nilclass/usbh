@@ -1,6 +1,7 @@
 use super::Driver;
 use crate::bus::HostBus;
 use crate::descriptor;
+use crate::types::DeviceAddress;
 use defmt::{bitflags, info};
 
 /// A [`Driver`] which logs various events
@@ -31,7 +32,7 @@ impl LogDriver {
 impl<B: HostBus> Driver<B> for LogDriver {
     fn attached(
         &mut self,
-        dev_addr: crate::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         connection_speed: crate::types::ConnectionSpeed,
     ) {
         if self.0.contains(EventMask::ATTACHED) {
@@ -43,7 +44,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
         }
     }
 
-    fn detached(&mut self, dev_addr: crate::types::DeviceAddress) {
+    fn detached(&mut self, dev_addr: DeviceAddress) {
         if self.0.contains(EventMask::DETACHED) {
             info!(
                 "[usbh LogDriver] Device {} was detached",
@@ -54,7 +55,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
 
     fn descriptor(
         &mut self,
-        dev_addr: crate::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         descriptor_type: u8,
         data: &[u8],
     ) {
@@ -119,7 +120,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
         }
     }
 
-    fn configure(&mut self, dev_addr: crate::types::DeviceAddress) -> Option<u8> {
+    fn configure(&mut self, dev_addr: DeviceAddress) -> Option<u8> {
         if self.0.contains(EventMask::CONFIGURE) {
             info!(
                 "[usbh LogDriver] Device {} is looking for a configuration",
@@ -131,7 +132,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
 
     fn configured(
         &mut self,
-        dev_addr: crate::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         value: u8,
         _host: &mut crate::UsbHost<B>,
     ) {
@@ -146,7 +147,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
 
     fn completed_control(
         &mut self,
-        dev_addr: crate::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         pipe_id: crate::PipeId,
         data: Option<&[u8]>,
     ) {
@@ -162,7 +163,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
 
     fn completed_in(
         &mut self,
-        dev_addr: crate::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         pipe_id: crate::PipeId,
         _data: &[u8],
     ) {
@@ -177,7 +178,7 @@ impl<B: HostBus> Driver<B> for LogDriver {
 
     fn completed_out(
         &mut self,
-        dev_addr: crate::types::DeviceAddress,
+        dev_addr: DeviceAddress,
         pipe_id: crate::PipeId,
         _data: &mut [u8],
     ) {
@@ -188,5 +189,9 @@ impl<B: HostBus> Driver<B> for LogDriver {
                 pipe_id.0,
             );
         }
+    }
+
+    fn stall(&mut self, dev_addr: DeviceAddress) {
+        info!("[usbh LogDriver] Device {}: STALL", u8::from(dev_addr));
     }
 }

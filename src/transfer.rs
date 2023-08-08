@@ -31,7 +31,7 @@ impl Transfer {
         }
     }
 
-    pub fn new_control_out(length: u16) -> Self {
+    pub(crate) fn new_control_out(length: u16) -> Self {
         Self {
             length,
             state: TransferState::Control(UsbDirection::Out, ControlState::WaitSetup),

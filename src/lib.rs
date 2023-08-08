@@ -86,6 +86,7 @@ pub mod types;
 
 mod discovery;
 mod enumeration;
+mod enumerator; // alternative.
 mod transfer;
 
 pub mod descriptor;
@@ -290,11 +291,17 @@ impl<B: HostBus> UsbHost<B> {
                     Event::Resume
                 }
                 bus::Event::Stall => {
-                    // TODO: figure out if we should reset everything in case of a stall, or just ignore it until the device is unplugged.
-                    // Notifying the drivers and the application of this condition would also make sense.
+                    // abort current transfer
+                    self.active_transfer.take();
                     Event::Stall
                 }
-                bus::Event::Error(error) => Event::BusError(error),
+                bus::Event::Error(error) => {
+                    if error == bus::Error::RxTimeout {
+                        self.bus.stop_transaction();
+                        self.active_transfer = None;
+                    }
+                    Event::BusError(error)
+                },
                 bus::Event::InterruptPipe(buf_ref) => Event::InterruptPipe(buf_ref),
                 bus::Event::Sof => Event::Sof,
             }
@@ -380,11 +387,13 @@ impl<B: HostBus> UsbHost<B> {
                 }
 
                 Event::ControlInData(pipe_id, len) => {
+                    let data = self.bus.received_data(len as usize);
                     if let Some(pipe_id) = pipe_id {
-                        let data = self.bus.received_data(len as usize);
                         for driver in drivers {
                             driver.completed_control(*dev_addr, pipe_id, Some(data));
                         }
+                    } else {
+                        defmt::warn!("Control in data w/o pipe: {}", data);
                     }
                 }
 
@@ -393,6 +402,8 @@ impl<B: HostBus> UsbHost<B> {
                         for driver in drivers {
                             driver.completed_control(*dev_addr, pipe_id, None);
                         }
+                    } else {
+                        defmt::warn!("Control out complete w/o pipe");
                     }
                 }
 
@@ -442,6 +453,12 @@ impl<B: HostBus> UsbHost<B> {
                 }
 
                 Event::BusError(error) => return PollResult::BusError(error),
+
+                Event::Stall => {
+                    for driver in drivers {
+                        driver.stall(*dev_addr);
+                    }
+                }
 
                 _ => {}
             },
@@ -523,6 +540,10 @@ impl<B: HostBus> UsbHost<B> {
             self.last_address += 1;
         }
         DeviceAddress(NonZeroU8::new(self.last_address).unwrap())
+    }
+
+    pub fn ls_preamble(&mut self, enable: bool) {
+        self.bus.ls_preamble(enable);
     }
 
     /// Initiate an IN transfer on the control endpoint of the given device
@@ -646,6 +667,15 @@ impl<B: HostBus> UsbHost<B> {
         )
     }
 
+    pub fn get_status(
+        &mut self,
+        dev_addr: DeviceAddress,
+        pipe_id: PipeId,
+        recipient: Recipient,
+    ) -> Result<(), ControlError> {
+        self.control_in(Some(dev_addr), Some(pipe_id), SetupPacket::new(UsbDirection::In, RequestType::Standard, recipient, Request::GET_STATUS, 0, 0, 2))
+    }
+
     /// Initiate a `Set_Address` (0x05) control OUT transfer
     ///
     /// Private, since this is only used by the enumeration process.
@@ -742,6 +772,8 @@ impl<B: HostBus> UsbHost<B> {
     pub fn bus(&mut self) -> &mut B {
         &mut self.bus
     }
+
+    pub fn release_pipe(&mut self, pipe_id: PipeId) {}
 
     /// Clean up after device was removed
     fn cleanup(&mut self, addr: DeviceAddress) {

@@ -55,6 +55,14 @@ pub trait HostBus {
         transfer_type: TransferType,
     );
 
+    fn ls_preamble(&mut self, enabled: bool);
+
+    /// Stop current transaction, if there is one in progress
+    ///
+    /// This will be called if a `RxTimeout` is encountered, to prevent the transaction from being
+    /// retried indefinitely.
+    fn stop_transaction(&mut self);
+
     /// Write a SETUP packet to the bus
     ///
     /// Once the packet has been acknowledged by the device, a [`Event::TransComplete`] must be generated.

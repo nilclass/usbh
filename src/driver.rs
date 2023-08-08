@@ -90,8 +90,11 @@ use crate::bus::HostBus;
 use crate::types::{ConnectionSpeed, DeviceAddress};
 use crate::{PipeId, UsbHost};
 
+pub mod detector;
+
 pub mod kbd;
 pub mod log;
+pub mod hub;
 
 /// The Driver trait
 ///
@@ -141,4 +144,7 @@ pub trait Driver<B: HostBus> {
 
     /// Called when new data is needed for the given OUT pipe
     fn completed_out(&mut self, dev_addr: DeviceAddress, pipe_id: PipeId, data: &mut [u8]);
+
+    /// Called when a device sends a STALL
+    fn stall(&mut self, _dev_addr: DeviceAddress) {}
 }
