@@ -170,7 +170,7 @@ pub trait HostBus {
     ///
     /// For an `In` pipe this is called after the driver(s) have consumed the data.
     /// For an `Out` pipe this is called after new data has been placed in the buffer .
-    fn pipe_continue(&self, pipe_ref: u8);
+    fn pipe_continue(&mut self, pipe_ref: u8);
 
     /// Enable/disable interrupt on SOF
     ///
